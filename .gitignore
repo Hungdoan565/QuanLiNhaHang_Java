@@ -1,1 +1,31 @@
+# Build output
+target/
+*.jar
+*.class
+dependency-reduced-pom.xml
+
+# Logs
+logs/
+*.log
+
+# Config với credentials (giữ file template)
+config/database.properties
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+*.swp
+*.swo
 docs/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Maven
+!.mvn/wrapper/maven-wrapper.jar
