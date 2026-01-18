@@ -1173,7 +1173,7 @@ public class POSPanel extends JPanel {
     
     private void showPaymentDialog(BigDecimal subtotal, BigDecimal vat, BigDecimal total) {
         JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this), "Thanh toán", Dialog.ModalityType.APPLICATION_MODAL);
-        dialog.setSize(480, 720);
+        dialog.setSize(500, 750);
         dialog.setLocationRelativeTo(this);
         dialog.setResizable(false);
         
@@ -1206,151 +1206,86 @@ public class POSPanel extends JPanel {
         
         content.add(summary, "growx, gaptop 12");
         
-        // Payment methods
+        // Payment methods label
         content.add(new JLabel("Phương thức thanh toán:"), "gaptop 12");
         
+        // Method buttons
         JPanel methods = new JPanel(new MigLayout("insets 0, gap 8", "[grow][grow][grow]", ""));
         methods.setOpaque(false);
         
-        String[] selectedMethod = {"CASH"};
         JButton cashBtn = createMethodBtn("💵 Tiền mặt", true);
         JButton transferBtn = createMethodBtn("📱 Chuyển khoản", false);
         JButton cardBtn = createMethodBtn("💳 Thẻ", false);
-        
-        // QR Code panel for transfer (hidden by default)
-        JPanel qrPanel = new JPanel(new MigLayout("wrap, insets 12", "[center]", ""));
-        qrPanel.setBackground(BACKGROUND);
-        qrPanel.putClientProperty(FlatClientProperties.STYLE, "arc: 12");
-        qrPanel.setVisible(false);
-        
-        // Generate VietQR URL
-        String bankId = "970436"; // VietcomBank
-        String accountNo = "1029849106";
-        String accountName = "DOAN VINH HUNG";
-        long amount = total.longValue();
-        String description = selectedTable.getName().replace(" ", "") + "_" + System.currentTimeMillis() % 10000;
-        String vietQRUrl = String.format(
-            "https://img.vietqr.io/image/%s-%s-compact2.png?amount=%d&addInfo=%s&accountName=%s",
-            bankId, accountNo, amount, description, accountName.replace(" ", "%20")
-        );
-        
-        JLabel qrTitle = new JLabel("📱 Quét mã để thanh toán");
-        qrTitle.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 14));
-        qrTitle.setForeground(TEXT_PRIMARY);
-        qrPanel.add(qrTitle, "center");
-        
-        // QR Code image
-        try {
-            java.net.URL url = new java.net.URL(vietQRUrl);
-            ImageIcon qrIcon = new ImageIcon(url);
-            // Scale to fit
-            Image scaled = qrIcon.getImage().getScaledInstance(200, 200, Image.SCALE_SMOOTH);
-            JLabel qrImage = new JLabel(new ImageIcon(scaled));
-            qrPanel.add(qrImage, "center, gaptop 8");
-        } catch (Exception ex) {
-            JLabel qrPlaceholder = new JLabel("[QR Code]");
-            qrPlaceholder.setPreferredSize(new Dimension(200, 200));
-            qrPlaceholder.setHorizontalAlignment(SwingConstants.CENTER);
-            qrPanel.add(qrPlaceholder, "center");
-            logger.warn("Failed to load QR code: {}", ex.getMessage());
-        }
-        
-        JLabel bankInfo = new JLabel("STK: " + accountNo + " - VietcomBank");
-        bankInfo.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 14));
-        bankInfo.setForeground(PRIMARY);
-        qrPanel.add(bankInfo, "center, gaptop 8");
-        
-        JLabel amountInfo = new JLabel("Số tiền: " + currencyFormat.format(total));
-        amountInfo.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 16));
-        amountInfo.setForeground(SUCCESS);
-        qrPanel.add(amountInfo, "center, gaptop 4");
-        
-        // Cash input panel (visible by default since Cash is selected)
-        JPanel cashPanel = new JPanel(new MigLayout("wrap, insets 8, gapy 8", "[grow]", ""));
-        cashPanel.setOpaque(false);
-        cashPanel.setVisible(true); // Default: Cash selected
-        
-        cashBtn.addActionListener(e -> {
-            selectedMethod[0] = "CASH";
-            cashBtn.setBackground(SUCCESS); cashBtn.setForeground(Color.WHITE);
-            transferBtn.setBackground(BACKGROUND); transferBtn.setForeground(TEXT_PRIMARY);
-            cardBtn.setBackground(BACKGROUND); cardBtn.setForeground(TEXT_PRIMARY);
-            cashPanel.setVisible(true); qrPanel.setVisible(false);
-        });
-        transferBtn.addActionListener(e -> {
-            selectedMethod[0] = "TRANSFER";
-            transferBtn.setBackground(SUCCESS); transferBtn.setForeground(Color.WHITE);
-            cashBtn.setBackground(BACKGROUND); cashBtn.setForeground(TEXT_PRIMARY);
-            cardBtn.setBackground(BACKGROUND); cardBtn.setForeground(TEXT_PRIMARY);
-            cashPanel.setVisible(false); qrPanel.setVisible(true);
-        });
-        cardBtn.addActionListener(e -> {
-            selectedMethod[0] = "CARD";
-            cardBtn.setBackground(SUCCESS); cardBtn.setForeground(Color.WHITE);
-            cashBtn.setBackground(BACKGROUND); cashBtn.setForeground(TEXT_PRIMARY);
-            transferBtn.setBackground(BACKGROUND); transferBtn.setForeground(TEXT_PRIMARY);
-            cashPanel.setVisible(false); qrPanel.setVisible(false);
-        });
         
         methods.add(cashBtn, "grow");
         methods.add(transferBtn, "grow");
         methods.add(cardBtn, "grow");
         content.add(methods, "growx");
         
-        // QR Panel (for transfer) - centered
-        content.add(qrPanel, "center, growx, gaptop 12");
+        // ============ Payment Panels Container (CardLayout) ============
+        JPanel paymentPanelsContainer = new JPanel(new CardLayout());
+        paymentPanelsContainer.setOpaque(false);
         
-        // Cash input section
-        cashPanel.add(new JLabel("Tiền khách đưa:"), "gaptop 8");
+        // -------- CASH PANEL --------
+        JPanel cashPanel = new JPanel(new MigLayout("wrap, insets 16, gapy 10", "[grow]", ""));
+        cashPanel.setBackground(BACKGROUND);
+        cashPanel.putClientProperty(FlatClientProperties.STYLE, "arc: 12");
         
-        JFormattedTextField cashInput = new JFormattedTextField();
-        cashInput.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 20));
+        JLabel cashLabel = new JLabel("💵 Tiền khách đưa:");
+        cashLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 14));
+        cashLabel.setForeground(TEXT_PRIMARY);
+        cashPanel.add(cashLabel, "growx");
+        
+        JTextField cashInput = new JTextField();
+        cashInput.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 24));
         cashInput.setHorizontalAlignment(SwingConstants.RIGHT);
         cashInput.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
-        cashPanel.add(cashInput, "growx, h 50!");
+        cashPanel.add(cashInput, "growx, h 55!");
         
         // Quick amount buttons
-        JPanel quickAmounts = new JPanel(new MigLayout("insets 0, gap 6", "[grow][grow][grow][grow]", ""));
+        JPanel quickAmounts = new JPanel(new MigLayout("insets 0, gap 8", "[grow][grow][grow][grow]", ""));
         quickAmounts.setOpaque(false);
         
         long totalLong = total.longValue();
-        long roundedUp = ((totalLong / 10000) + 1) * 10000; // Round up to nearest 10k
+        long roundedUp = ((totalLong / 10000) + 1) * 10000;
         
-        String[] quickLabels = {"100k", "200k", "500k", "Đủ tiền"};
         long[] quickValues = {100000, 200000, 500000, roundedUp};
+        String[] quickLabels = {"100k", "200k", "500k", currencyFormat.format(roundedUp)};
         
         final BigDecimal finalTotal = total;
         JLabel changeValue = new JLabel("0 ₫");
         
         for (int i = 0; i < quickLabels.length; i++) {
             int idx = i;
-            JButton qBtn = new JButton(i == 3 ? currencyFormat.format(quickValues[i]) : quickLabels[i]);
-            qBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 11));
-            qBtn.setBackground(BACKGROUND);
+            JButton qBtn = new JButton(quickLabels[i]);
+            qBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 12));
+            qBtn.setBackground(SURFACE);
             qBtn.setForeground(TEXT_PRIMARY);
             qBtn.setBorderPainted(false);
-            qBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 6");
+            qBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            qBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
             qBtn.addActionListener(e -> {
                 cashInput.setText(formatWithCommas(quickValues[idx]));
                 updateChange(quickValues[idx], finalTotal, changeValue);
             });
-            quickAmounts.add(qBtn, "grow");
+            quickAmounts.add(qBtn, "grow, h 40!");
         }
-        cashPanel.add(quickAmounts, "growx, gaptop 6");
+        cashPanel.add(quickAmounts, "growx");
         
-        // Change panel
-        JPanel changePanel = new JPanel(new MigLayout("insets 12", "[]push[]", ""));
-        changePanel.setBackground(new Color(SUCCESS.getRed(), SUCCESS.getGreen(), SUCCESS.getBlue(), 30));
-        changePanel.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
-        changePanel.add(new JLabel("Tiền thối:"));
-        changeValue.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 18));
+        // Change display
+        JPanel changePanel = new JPanel(new MigLayout("insets 14", "[]push[]", ""));
+        changePanel.setBackground(new Color(SUCCESS.getRed(), SUCCESS.getGreen(), SUCCESS.getBlue(), 40));
+        changePanel.putClientProperty(FlatClientProperties.STYLE, "arc: 10");
+        JLabel changeLbl = new JLabel("Tiền thối:");
+        changeLbl.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 14));
+        changeLbl.setForeground(TEXT_PRIMARY);
+        changePanel.add(changeLbl);
+        changeValue.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 20));
         changeValue.setForeground(SUCCESS);
         changePanel.add(changeValue);
-        cashPanel.add(changePanel, "growx, gaptop 8");
+        cashPanel.add(changePanel, "growx");
         
-        content.add(cashPanel, "growx");
-        
-        // Format on type
+        // Listen for input
         cashInput.addKeyListener(new KeyAdapter() {
             @Override
             public void keyReleased(KeyEvent e) {
@@ -1370,26 +1305,196 @@ public class POSPanel extends JPanel {
             }
         });
         
-        // Buttons
-        JPanel buttons = new JPanel(new MigLayout("insets 0, gap 12", "[grow][grow]", ""));
+        paymentPanelsContainer.add(cashPanel, "CASH");
+        
+        // -------- TRANSFER PANEL (QR) --------
+        JPanel qrPanel = new JPanel(new MigLayout("wrap, insets 16", "[center, grow]", ""));
+        qrPanel.setBackground(BACKGROUND);
+        qrPanel.putClientProperty(FlatClientProperties.STYLE, "arc: 12");
+        
+        JLabel qrTitle = new JLabel("📱 Quét mã để thanh toán");
+        qrTitle.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 16));
+        qrTitle.setForeground(TEXT_PRIMARY);
+        qrPanel.add(qrTitle, "center");
+        
+        // Generate VietQR
+        String bankId = "970436";
+        String accountNo = "1029849106";
+        String accountName = "DOAN VINH HUNG";
+        long amount = total.longValue();
+        String description = selectedTable.getName().replace(" ", "") + "_" + System.currentTimeMillis() % 10000;
+        String vietQRUrl = String.format(
+            "https://img.vietqr.io/image/%s-%s-compact2.png?amount=%d&addInfo=%s&accountName=%s",
+            bankId, accountNo, amount, description, accountName.replace(" ", "%20")
+        );
+        
+        try {
+            java.net.URL url = new java.net.URL(vietQRUrl);
+            ImageIcon qrIcon = new ImageIcon(url);
+            Image scaled = qrIcon.getImage().getScaledInstance(220, 220, Image.SCALE_SMOOTH);
+            JLabel qrImage = new JLabel(new ImageIcon(scaled));
+            qrPanel.add(qrImage, "center, gaptop 12");
+        } catch (Exception ex) {
+            JLabel qrPlaceholder = new JLabel("⚠️ Không thể tải QR");
+            qrPlaceholder.setPreferredSize(new Dimension(220, 220));
+            qrPlaceholder.setHorizontalAlignment(SwingConstants.CENTER);
+            qrPlaceholder.setForeground(ERROR);
+            qrPanel.add(qrPlaceholder, "center");
+            logger.warn("Failed to load QR: {}", ex.getMessage());
+        }
+        
+        JLabel bankInfo = new JLabel("STK: " + accountNo + " - VietcomBank");
+        bankInfo.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 15));
+        bankInfo.setForeground(PRIMARY);
+        qrPanel.add(bankInfo, "center, gaptop 12");
+        
+        JLabel amountInfo = new JLabel("Số tiền: " + currencyFormat.format(total));
+        amountInfo.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 18));
+        amountInfo.setForeground(SUCCESS);
+        qrPanel.add(amountInfo, "center, gaptop 4");
+        
+        paymentPanelsContainer.add(qrPanel, "TRANSFER");
+        
+        // -------- CARD PANEL --------
+        JPanel cardPanel = new JPanel(new MigLayout("wrap, insets 16", "[center, grow]", "[center]"));
+        cardPanel.setBackground(BACKGROUND);
+        cardPanel.putClientProperty(FlatClientProperties.STYLE, "arc: 12");
+        
+        JLabel cardIcon = new JLabel("💳");
+        cardIcon.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 48));
+        cardPanel.add(cardIcon, "center, gaptop 20");
+        
+        JLabel cardText = new JLabel("Vui lòng quẹt thẻ trên máy POS");
+        cardText.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 16));
+        cardText.setForeground(TEXT_PRIMARY);
+        cardPanel.add(cardText, "center, gaptop 12");
+        
+        JLabel cardAmount = new JLabel("Số tiền: " + currencyFormat.format(total));
+        cardAmount.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 20));
+        cardAmount.setForeground(SUCCESS);
+        cardPanel.add(cardAmount, "center, gaptop 8");
+        
+        paymentPanelsContainer.add(cardPanel, "CARD");
+        
+        content.add(paymentPanelsContainer, "grow, gaptop 12");
+        
+        // ============ Button Actions ============
+        CardLayout cardLayout = (CardLayout) paymentPanelsContainer.getLayout();
+        
+        cashBtn.addActionListener(e -> {
+            cashBtn.setBackground(SUCCESS); cashBtn.setForeground(Color.WHITE);
+            transferBtn.setBackground(BACKGROUND); transferBtn.setForeground(TEXT_PRIMARY);
+            cardBtn.setBackground(BACKGROUND); cardBtn.setForeground(TEXT_PRIMARY);
+            cardLayout.show(paymentPanelsContainer, "CASH");
+        });
+        transferBtn.addActionListener(e -> {
+            transferBtn.setBackground(SUCCESS); transferBtn.setForeground(Color.WHITE);
+            cashBtn.setBackground(BACKGROUND); cashBtn.setForeground(TEXT_PRIMARY);
+            cardBtn.setBackground(BACKGROUND); cardBtn.setForeground(TEXT_PRIMARY);
+            cardLayout.show(paymentPanelsContainer, "TRANSFER");
+        });
+        cardBtn.addActionListener(e -> {
+            cardBtn.setBackground(SUCCESS); cardBtn.setForeground(Color.WHITE);
+            cashBtn.setBackground(BACKGROUND); cashBtn.setForeground(TEXT_PRIMARY);
+            transferBtn.setBackground(BACKGROUND); transferBtn.setForeground(TEXT_PRIMARY);
+            cardLayout.show(paymentPanelsContainer, "CARD");
+        });
+        
+        // Show default (Cash)
+        cardLayout.show(paymentPanelsContainer, "CASH");
+        
+        // ============ Action Buttons ============
+        JPanel buttons = new JPanel(new MigLayout("insets 0, gap 10", "[grow][grow][grow]", ""));
         buttons.setOpaque(false);
         
-        JButton cancelBtn = createActionBtn("Hủy", BACKGROUND);
+        // Hủy button
+        JButton cancelBtn = createActionBtn("✕ Hủy", BACKGROUND);
         cancelBtn.setForeground(TEXT_PRIMARY);
         cancelBtn.addActionListener(e -> dialog.dispose());
-        buttons.add(cancelBtn, "grow, h 48!");
+        buttons.add(cancelBtn, "grow, h 50!");
         
-        JButton confirmBtn = createActionBtn("✓ Xác nhận thanh toán", SUCCESS);
+        // In hóa đơn button
+        JButton printBtn = createActionBtn("🖨 In hóa đơn", PRIMARY);
+        printBtn.addActionListener(e -> {
+            // TODO: Implement print receipt
+            ToastNotification.info(dialog, "Đang in hóa đơn...");
+            printReceipt(total);
+        });
+        buttons.add(printBtn, "grow, h 50!");
+        
+        // Nhận tiền & Hoàn tất button  
+        JButton confirmBtn = createActionBtn("✓ Nhận tiền & Hoàn tất", SUCCESS);
         confirmBtn.addActionListener(e -> {
             dialog.dispose();
             completePayment();
         });
-        buttons.add(confirmBtn, "grow, h 48!");
+        buttons.add(confirmBtn, "grow, h 50!");
         
         content.add(buttons, "growx, gaptop 16");
         
-        dialog.setContentPane(content);
+        // Wrap in scroll pane
+        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane.setBorder(null);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        
+        dialog.setContentPane(scrollPane);
         dialog.setVisible(true);
+    }
+    
+    /**
+     * Print receipt for the payment
+     */
+    private void printReceipt(BigDecimal total) {
+        StringBuilder receipt = new StringBuilder();
+        receipt.append("═══════════════════════════════════════\n");
+        receipt.append("           RESTAURANT POS\n");
+        receipt.append("═══════════════════════════════════════\n");
+        receipt.append("Bàn: ").append(selectedTable.getName()).append("\n");
+        receipt.append("Ngày: ").append(java.time.LocalDateTime.now().format(
+            java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))).append("\n");
+        receipt.append("───────────────────────────────────────\n");
+        
+        for (OrderItem item : orderItems) {
+            String itemLine = String.format("%-20s x%d %15s\n", 
+                item.name.length() > 20 ? item.name.substring(0, 17) + "..." : item.name,
+                item.quantity, 
+                currencyFormat.format(item.price.multiply(new BigDecimal(item.quantity))));
+            receipt.append(itemLine);
+        }
+        
+        receipt.append("───────────────────────────────────────\n");
+        BigDecimal subtotal = orderItems.stream()
+            .map(i -> i.price.multiply(new BigDecimal(i.quantity)))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal vat = subtotal.multiply(new BigDecimal("0.08"));
+        
+        receipt.append(String.format("Tạm tính: %27s\n", currencyFormat.format(subtotal)));
+        receipt.append(String.format("VAT (8%%): %27s\n", currencyFormat.format(vat)));
+        receipt.append("═══════════════════════════════════════\n");
+        receipt.append(String.format("TỔNG CỘNG: %26s\n", currencyFormat.format(total)));
+        receipt.append("═══════════════════════════════════════\n");
+        receipt.append("       Cảm ơn quý khách!\n");
+        receipt.append("      Hẹn gặp lại lần sau!\n");
+        
+        // Show receipt in dialog (in real app, would print to printer)
+        JTextArea receiptArea = new JTextArea(receipt.toString());
+        receiptArea.setFont(new Font("Consolas", Font.PLAIN, 12));
+        receiptArea.setEditable(false);
+        receiptArea.setBackground(Color.WHITE);
+        receiptArea.setForeground(Color.BLACK);
+        
+        JScrollPane scrollPane = new JScrollPane(receiptArea);
+        scrollPane.setPreferredSize(new Dimension(400, 400));
+        
+        JOptionPane.showMessageDialog(
+            SwingUtilities.getWindowAncestor(this),
+            scrollPane,
+            "Hóa đơn - " + selectedTable.getName(),
+            JOptionPane.PLAIN_MESSAGE
+        );
+        
+        logger.info("Receipt printed for table: {}", selectedTable.getName());
     }
     
     private JButton createMethodBtn(String text, boolean selected) {
