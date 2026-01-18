@@ -3,6 +3,7 @@ package com.restaurant.view.panels;
 import com.formdev.flatlaf.FlatClientProperties;
 import com.restaurant.config.AppConfig;
 import com.restaurant.model.User;
+import com.restaurant.service.UserService;
 import com.restaurant.util.ToastNotification;
 import net.miginfocom.swing.MigLayout;
 import org.apache.logging.log4j.LogManager;
@@ -42,6 +43,7 @@ public class StaffPanel extends JPanel {
     private DefaultTableModel tableModel;
     private JTextField searchField;
     private JComboBox<String> roleFilter;
+    private final UserService userService = UserService.getInstance();
     
     public StaffPanel(User user) {
         this.currentUser = user;
@@ -78,8 +80,8 @@ public class StaffPanel extends JPanel {
         });
         toolbar.add(searchField);
         
-        // Role filter
-        roleFilter = new JComboBox<>(new String[]{"Tất cả", "ADMIN", "CASHIER", "WAITER", "CHEF"});
+        // Role filter - default to "Nhân viên" to hide admin
+        roleFilter = new JComboBox<>(new String[]{"Nhân viên", "Tất cả", "CASHIER", "WAITER", "CHEF", "ADMIN"});
         roleFilter.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
         roleFilter.addActionListener(e -> filterStaff());
         toolbar.add(roleFilter);
@@ -195,17 +197,27 @@ public class StaffPanel extends JPanel {
     }
     
     private void loadStaff() {
-        // TODO: Load from database
         staffList.clear();
         
-        staffList.add(new StaffMember(1, "admin", "Administrator", "ADMIN", "admin@restaurant.com", true));
-        staffList.add(new StaffMember(2, "cashier1", "Nguyễn Văn Thu", "CASHIER", "thu@restaurant.com", true));
-        staffList.add(new StaffMember(3, "waiter1", "Trần Thị Hoa", "WAITER", "hoa@restaurant.com", true));
-        staffList.add(new StaffMember(4, "waiter2", "Lê Minh Tuấn", "WAITER", "tuan@restaurant.com", true));
-        staffList.add(new StaffMember(5, "chef1", "Phạm Văn Bếp", "CHEF", "bep@restaurant.com", true));
-        staffList.add(new StaffMember(6, "chef2", "Hoàng Thị Nấu", "CHEF", "nau@restaurant.com", false));
+        try {
+            List<User> users = userService.getAllUsers();
+            for (User user : users) {
+                staffList.add(new StaffMember(
+                    user.getId(),
+                    user.getUsername(),
+                    user.getFullName(),
+                    user.getRole() != null ? user.getRole().getName() : "UNKNOWN",
+                    user.getEmail(),
+                    user.isActive()
+                ));
+            }
+            logger.info("Loaded {} staff members from database", staffList.size());
+        } catch (Exception e) {
+            logger.error("Error loading staff from database", e);
+            ToastNotification.error(SwingUtilities.getWindowAncestor(this), "Lỗi tải dữ liệu nhân viên");
+        }
         
-        refreshTable();
+        filterStaff(); // Apply default filter
     }
     
     private void refreshTable() {
@@ -232,7 +244,16 @@ public class StaffPanel extends JPanel {
             boolean matchSearch = search.isEmpty() || 
                                   s.username.toLowerCase().contains(search) ||
                                   s.fullName.toLowerCase().contains(search);
-            boolean matchRole = "Tất cả".equals(roleSelect) || s.role.equals(roleSelect);
+            
+            boolean matchRole;
+            if ("Nhân viên".equals(roleSelect)) {
+                // Hide ADMIN
+                matchRole = !"ADMIN".equals(s.role);
+            } else if ("Tất cả".equals(roleSelect)) {
+                matchRole = true;
+            } else {
+                matchRole = s.role.equals(roleSelect);
+            }
             
             if (matchSearch && matchRole) {
                 tableModel.addRow(new Object[]{
@@ -366,6 +387,11 @@ public class StaffPanel extends JPanel {
             return;
         }
         
+        if ("ADMIN".equals(staff.role)) {
+            ToastNotification.error(SwingUtilities.getWindowAncestor(this), "Không thể xóa tài khoản Admin!");
+            return;
+        }
+        
         int confirm = JOptionPane.showConfirmDialog(
             SwingUtilities.getWindowAncestor(this),
             "Bạn có chắc muốn xóa \"" + staff.fullName + "\"?",
@@ -375,9 +401,19 @@ public class StaffPanel extends JPanel {
         );
         
         if (confirm == JOptionPane.YES_OPTION) {
-            staffList.remove(staff);
-            refreshTable();
-            ToastNotification.success(SwingUtilities.getWindowAncestor(this), "Đã xóa: " + staff.fullName);
+            try {
+                boolean success = userService.deleteUser(staffId);
+                if (success) {
+                    staffList.remove(staff);
+                    filterStaff();
+                    ToastNotification.success(SwingUtilities.getWindowAncestor(this), "Đã xóa: " + staff.fullName);
+                } else {
+                    ToastNotification.error(SwingUtilities.getWindowAncestor(this), "Không thể xóa nhân viên!");
+                }
+            } catch (Exception e) {
+                logger.error("Error deleting staff", e);
+                ToastNotification.error(SwingUtilities.getWindowAncestor(this), "Lỗi: " + e.getMessage());
+            }
         }
     }
     
