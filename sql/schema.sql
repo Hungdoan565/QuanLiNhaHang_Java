@@ -400,5 +400,29 @@ INSERT INTO modifiers (group_id, name, price_adjustment, is_default, display_ord
 (4, 'Không đường', 0, FALSE, 5);
 
 -- ==============================================
+-- RESERVATIONS (Đặt bàn trước)
+-- ==============================================
+CREATE TABLE IF NOT EXISTS reservations (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    table_id INT NOT NULL,
+    customer_name VARCHAR(100) NOT NULL,
+    customer_phone VARCHAR(20) NOT NULL,
+    guest_count INT NOT NULL DEFAULT 2,
+    reservation_time DATETIME NOT NULL,
+    notes TEXT,
+    status ENUM('PENDING', 'CONFIRMED', 'ARRIVED', 'CANCELLED', 'NO_SHOW') DEFAULT 'PENDING',
+    notified BOOLEAN DEFAULT FALSE COMMENT 'Đã gửi thông báo nhắc chưa',
+    created_by INT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_reservation_time (reservation_time),
+    INDEX idx_customer_phone (customer_phone),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ==============================================
 -- End of Additional Schema
 -- ==============================================
+

@@ -10,6 +10,8 @@ import com.restaurant.model.User;
 import com.restaurant.service.CategoryService;
 import com.restaurant.service.ProductService;
 import com.restaurant.service.TableService;
+import com.restaurant.model.Reservation;
+import com.restaurant.service.ReservationService;
 import com.restaurant.util.KitchenOrderManager;
 import com.restaurant.util.KitchenOrderManager.KitchenOrder;
 import com.restaurant.util.KitchenOrderManager.OrderItem;
@@ -109,16 +111,43 @@ public class POSPanel extends JPanel {
     }
     
     private void initializeUI() {
-        setLayout(new BorderLayout(16, 16));
+        setLayout(new MigLayout("fill, insets 0", "[grow][360!]", "[grow]"));
         setBackground(BACKGROUND);
         
-        // Left: Table Map / Menu Grid (toggle)
+        // Left panel (Table Map or Menu Grid)
         leftPanel = createLeftPanel();
-        add(leftPanel, BorderLayout.CENTER);
+        add(leftPanel, "grow");
         
-        // Right: Order Panel
-        JPanel orderSection = createOrderSection();
-        add(orderSection, BorderLayout.EAST);
+        // Right panel (Order section)
+        add(createOrderSection(), "grow");
+        
+        // Start reservation reminder timer
+        startReservationReminder();
+    }
+    
+    private void startReservationReminder() {
+        ReservationService.getInstance().startReminderTimer(reservation -> {
+            // Show reminder on EDT
+            SwingUtilities.invokeLater(() -> {
+                String message = String.format(
+                    "⏰ Nhắc nhở: Khách %s (%s) đặt %s\nSẽ đến lúc %s - %d khách",
+                    reservation.getCustomerName(),
+                    reservation.getCustomerPhone(),
+                    reservation.getTableName(),
+                    reservation.getFormattedTime(),
+                    reservation.getGuestCount()
+                );
+                
+                JOptionPane.showMessageDialog(
+                    SwingUtilities.getWindowAncestor(this),
+                    message,
+                    "📅 Nhắc nhở đặt bàn",
+                    JOptionPane.INFORMATION_MESSAGE
+                );
+                
+                logger.info("Reminder shown for reservation: {}", reservation.getId());
+            });
+        });
     }
     
     private JPanel createLeftPanel() {
@@ -1030,7 +1059,7 @@ public class POSPanel extends JPanel {
         btnsPanel.setOpaque(false);
         
         int[] selectedCount = {1};
-        JButton[] guestBtns = new JButton[Math.min(selectedTable.getCapacity(), 8)];
+        JButton[] guestBtns = new JButton[selectedTable.getCapacity()]; // Use actual capacity
         
         for (int i = 0; i < guestBtns.length; i++) {
             int count = i + 1;
@@ -1094,22 +1123,170 @@ public class POSPanel extends JPanel {
     private void reserveTable() {
         if (selectedTable == null || !selectedTable.isAvailable()) return;
         
-        String name = JOptionPane.showInputDialog(
-            SwingUtilities.getWindowAncestor(this),
-            "Tên khách đặt bàn:",
-            "Đặt trước " + selectedTable.getName(),
-            JOptionPane.QUESTION_MESSAGE
-        );
+        // Create dialog
+        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this), 
+            "Đặt trước " + selectedTable.getName(), Dialog.ModalityType.APPLICATION_MODAL);
+        dialog.setSize(420, 520);
+        dialog.setLocationRelativeTo(this);
+        dialog.setResizable(false);
         
-        if (name != null && !name.trim().isEmpty()) {
-            selectedTable.setStatus(TableStatus.RESERVED);
-            refreshTableGrid();
-            updateOrderSection();
-            updateButtonStates();
+        JPanel content = new JPanel(new MigLayout("wrap, insets 20, gapy 12", "[grow]", ""));
+        content.setBackground(SURFACE);
+        
+        // Header
+        JLabel header = new JLabel("📅 Đặt bàn " + selectedTable.getName());
+        header.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 20));
+        content.add(header, "center");
+        
+        JLabel subHeader = new JLabel("Sức chứa: " + selectedTable.getCapacity() + " chỗ");
+        subHeader.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 13));
+        subHeader.setForeground(TEXT_SECONDARY);
+        content.add(subHeader, "center, gapbottom 12");
+        
+        // Form panel
+        JPanel form = new JPanel(new MigLayout("wrap 2, insets 12", "[][grow]", ""));
+        form.setBackground(BACKGROUND);
+        form.putClientProperty(FlatClientProperties.STYLE, "arc: 12");
+        
+        // Phone
+        form.add(new JLabel("📱 Số điện thoại:"));
+        JTextField phoneField = new JTextField(15);
+        phoneField.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 14));
+        phoneField.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT, "0912345678");
+        form.add(phoneField, "growx");
+        
+        // Name
+        form.add(new JLabel("👤 Tên khách:"));
+        JTextField nameField = new JTextField(15);
+        nameField.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 14));
+        nameField.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT, "Nguyễn Văn A");
+        form.add(nameField, "growx");
+        
+        // Guest count
+        form.add(new JLabel("👥 Số khách:"));
+        JSpinner guestSpinner = new JSpinner(new SpinnerNumberModel(2, 1, selectedTable.getCapacity(), 1));
+        guestSpinner.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 14));
+        form.add(guestSpinner, "growx");
+        
+        // Date
+        form.add(new JLabel("📅 Ngày đến:"));
+        JPanel datePanel = new JPanel(new MigLayout("insets 0, gap 4", "[grow][grow][grow]", ""));
+        datePanel.setOpaque(false);
+        
+        java.time.LocalDate today = java.time.LocalDate.now();
+        JSpinner daySpinner = new JSpinner(new SpinnerNumberModel(today.getDayOfMonth(), 1, 31, 1));
+        JSpinner monthSpinner = new JSpinner(new SpinnerNumberModel(today.getMonthValue(), 1, 12, 1));
+        JSpinner yearSpinner = new JSpinner(new SpinnerNumberModel(today.getYear(), today.getYear(), today.getYear() + 1, 1));
+        
+        datePanel.add(daySpinner, "grow");
+        datePanel.add(monthSpinner, "grow");
+        datePanel.add(yearSpinner, "grow");
+        form.add(datePanel, "growx");
+        
+        // Time
+        form.add(new JLabel("⏰ Giờ đến:"));
+        JPanel timePanel = new JPanel(new MigLayout("insets 0, gap 4", "[grow][grow]", ""));
+        timePanel.setOpaque(false);
+        
+        JSpinner hourSpinner = new JSpinner(new SpinnerNumberModel(18, 0, 23, 1));
+        JSpinner minuteSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 59, 15));
+        
+        timePanel.add(hourSpinner, "grow");
+        timePanel.add(new JLabel(":"), "");
+        timePanel.add(minuteSpinner, "grow");
+        form.add(timePanel, "growx");
+        
+        // Notes
+        form.add(new JLabel("📝 Ghi chú:"), "top");
+        JTextArea notesArea = new JTextArea(3, 15);
+        notesArea.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 13));
+        notesArea.setLineWrap(true);
+        notesArea.setWrapStyleWord(true);
+        notesArea.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT, "Yêu cầu đặc biệt, sinh nhật...");
+        JScrollPane notesScroll = new JScrollPane(notesArea);
+        form.add(notesScroll, "growx, h 70!");
+        
+        content.add(form, "growx");
+        
+        // Buttons
+        JPanel buttons = new JPanel(new MigLayout("insets 0, gap 12", "[grow][grow]", ""));
+        buttons.setOpaque(false);
+        
+        JButton cancelBtn = createActionBtn("Hủy", BACKGROUND);
+        cancelBtn.setForeground(TEXT_PRIMARY);
+        cancelBtn.addActionListener(e -> dialog.dispose());
+        buttons.add(cancelBtn, "grow, h 45!");
+        
+        JButton confirmBtn = createActionBtn("✓ Xác nhận đặt bàn", SUCCESS);
+        confirmBtn.addActionListener(e -> {
+            // Validate and save
+            String phone = phoneField.getText().trim();
+            String name = nameField.getText().trim();
+            int guests = (Integer) guestSpinner.getValue();
+            int day = (Integer) daySpinner.getValue();
+            int month = (Integer) monthSpinner.getValue();
+            int year = (Integer) yearSpinner.getValue();
+            int hour = (Integer) hourSpinner.getValue();
+            int minute = (Integer) minuteSpinner.getValue();
+            String notes = notesArea.getText().trim();
             
-            ToastNotification.info(SwingUtilities.getWindowAncestor(this),
-                selectedTable.getName() + " đã được đặt trước cho " + name);
-        }
+            // Validation
+            if (phone.isEmpty()) {
+                ToastNotification.warning(dialog, "Vui lòng nhập số điện thoại");
+                phoneField.requestFocus();
+                return;
+            }
+            if (name.isEmpty()) {
+                ToastNotification.warning(dialog, "Vui lòng nhập tên khách");
+                nameField.requestFocus();
+                return;
+            }
+            
+            // Create reservation
+            try {
+                LocalDateTime reservationTime = LocalDateTime.of(year, month, day, hour, minute);
+                
+                if (reservationTime.isBefore(LocalDateTime.now())) {
+                    ToastNotification.warning(dialog, "Thời gian đặt bàn phải trong tương lai");
+                    return;
+                }
+                
+                com.restaurant.model.Reservation reservation = new com.restaurant.model.Reservation(
+                    selectedTable.getId(), name, phone, guests, reservationTime
+                );
+                reservation.setNotes(notes.isEmpty() ? null : notes);
+                
+                com.restaurant.service.ReservationService reservationService = 
+                    com.restaurant.service.ReservationService.getInstance();
+                com.restaurant.service.ServiceResult<com.restaurant.model.Reservation> result = 
+                    reservationService.createReservation(reservation);
+                
+                if (result.isSuccess()) {
+                    dialog.dispose();
+                    
+                    // Update table status
+                    selectedTable.setStatus(TableStatus.RESERVED);
+                    refreshTableGrid();
+                    updateOrderSection();
+                    updateButtonStates();
+                    
+                    ToastNotification.success(SwingUtilities.getWindowAncestor(this),
+                        "Đã đặt " + selectedTable.getName() + " cho " + name + 
+                        " lúc " + String.format("%02d:%02d %02d/%02d", hour, minute, day, month));
+                } else {
+                    ToastNotification.error(dialog, result.getMessage());
+                }
+            } catch (Exception ex) {
+                ToastNotification.error(dialog, "Lỗi: " + ex.getMessage());
+                logger.error("Error creating reservation: {}", ex.getMessage(), ex);
+            }
+        });
+        buttons.add(confirmBtn, "grow, h 45!");
+        
+        content.add(buttons, "growx, gaptop 8");
+        
+        dialog.setContentPane(content);
+        dialog.setVisible(true);
     }
     
     private void setTableCleaning() {
