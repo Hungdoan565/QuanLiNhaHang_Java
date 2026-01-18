@@ -2,7 +2,7 @@ package com.restaurant.dao;
 
 import com.restaurant.dao.interfaces.IReservationDAO;
 import com.restaurant.model.Reservation;
-import com.restaurant.util.DatabaseConnection;
+import com.restaurant.config.DatabaseConnection;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -28,7 +28,7 @@ public class ReservationDAO implements IReservationDAO {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """;
         
-        try (Connection conn = DatabaseConnection.getConnection();
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             
             stmt.setInt(1, reservation.getTableId());
@@ -69,7 +69,7 @@ public class ReservationDAO implements IReservationDAO {
             WHERE r.id = ?
             """;
         
-        try (Connection conn = DatabaseConnection.getConnection();
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             stmt.setInt(1, id);
@@ -95,7 +95,7 @@ public class ReservationDAO implements IReservationDAO {
             """;
         
         List<Reservation> list = new ArrayList<>();
-        try (Connection conn = DatabaseConnection.getConnection();
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             stmt.setInt(1, tableId);
@@ -121,7 +121,7 @@ public class ReservationDAO implements IReservationDAO {
             """;
         
         List<Reservation> list = new ArrayList<>();
-        try (Connection conn = DatabaseConnection.getConnection();
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             stmt.setDate(1, Date.valueOf(date));
@@ -147,7 +147,7 @@ public class ReservationDAO implements IReservationDAO {
             """;
         
         List<Reservation> list = new ArrayList<>();
-        try (Connection conn = DatabaseConnection.getConnection();
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             stmt.setString(1, "%" + phone + "%");
@@ -175,7 +175,7 @@ public class ReservationDAO implements IReservationDAO {
             """;
         
         List<Reservation> list = new ArrayList<>();
-        try (Connection conn = DatabaseConnection.getConnection();
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             ResultSet rs = stmt.executeQuery();
@@ -202,7 +202,7 @@ public class ReservationDAO implements IReservationDAO {
             """;
         
         List<Reservation> list = new ArrayList<>();
-        try (Connection conn = DatabaseConnection.getConnection();
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             ResultSet rs = stmt.executeQuery();
@@ -225,7 +225,7 @@ public class ReservationDAO implements IReservationDAO {
             WHERE id = ?
             """;
         
-        try (Connection conn = DatabaseConnection.getConnection();
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             stmt.setString(1, reservation.getCustomerName());
@@ -247,7 +247,7 @@ public class ReservationDAO implements IReservationDAO {
     public boolean updateStatus(int id, Reservation.Status status) {
         String sql = "UPDATE reservations SET status = ? WHERE id = ?";
         
-        try (Connection conn = DatabaseConnection.getConnection();
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             stmt.setString(1, status.name());
@@ -264,7 +264,7 @@ public class ReservationDAO implements IReservationDAO {
     public boolean markNotified(int id) {
         String sql = "UPDATE reservations SET notified = TRUE WHERE id = ?";
         
-        try (Connection conn = DatabaseConnection.getConnection();
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             stmt.setInt(1, id);
@@ -279,7 +279,7 @@ public class ReservationDAO implements IReservationDAO {
     public boolean delete(int id) {
         String sql = "DELETE FROM reservations WHERE id = ?";
         
-        try (Connection conn = DatabaseConnection.getConnection();
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             stmt.setInt(1, id);
@@ -298,19 +298,38 @@ public class ReservationDAO implements IReservationDAO {
             LEFT JOIN tables t ON r.table_id = t.id 
             WHERE r.table_id = ?
               AND r.status IN ('PENDING', 'CONFIRMED')
-              AND DATE(r.reservation_time) = CURDATE()
             ORDER BY r.reservation_time
             LIMIT 1
             """;
         
-        try (Connection conn = DatabaseConnection.getConnection();
+        logger.info("findActiveForTable: Looking for table_id={}", tableId);
+        
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             stmt.setInt(1, tableId);
+            logger.info("Executing query for table_id={}", tableId);
+            
             ResultSet rs = stmt.executeQuery();
             
             if (rs.next()) {
-                return Optional.of(mapResultSet(rs));
+                Reservation r = mapResultSet(rs);
+                logger.info("Found reservation: id={}, customer={}, time={}", 
+                    r.getId(), r.getCustomerName(), r.getReservationTime());
+                return Optional.of(r);
+            } else {
+                logger.warn("No reservation found for table_id={}. Check DB manually.", tableId);
+                
+                // Debug: Try without time filter
+                String debugSql = "SELECT COUNT(*) FROM reservations WHERE table_id = ? AND status IN ('PENDING', 'CONFIRMED')";
+                try (PreparedStatement debugStmt = conn.prepareStatement(debugSql)) {
+                    debugStmt.setInt(1, tableId);
+                    ResultSet debugRs = debugStmt.executeQuery();
+                    if (debugRs.next()) {
+                        logger.info("DEBUG: Total pending/confirmed reservations for table {}: {}", 
+                            tableId, debugRs.getInt(1));
+                    }
+                }
             }
         } catch (SQLException e) {
             logger.error("Error finding active reservation for table {}: {}", tableId, e.getMessage(), e);

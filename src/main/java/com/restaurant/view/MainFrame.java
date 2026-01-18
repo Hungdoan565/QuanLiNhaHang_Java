@@ -63,6 +63,7 @@ public class MainFrame extends JFrame {
     private JLabel headerTitle;
     private JLabel clockLabel;
     private Timer clockTimer;
+    private POSPanel posPanel;
     
     // Panel identifiers
     public static final String PANEL_DASHBOARD = "dashboard";
@@ -149,7 +150,9 @@ public class MainFrame extends JFrame {
             navigateTo(panelId, title);
         });
         contentPanel.add(dashboardPanel, PANEL_DASHBOARD);
-        contentPanel.add(new POSPanel(currentUser), PANEL_POS);
+        
+        posPanel = new POSPanel(currentUser);
+        contentPanel.add(posPanel, PANEL_POS);
         contentPanel.add(new KitchenPanel(currentUser), PANEL_KITCHEN);
         contentPanel.add(new MenuPanel(currentUser), PANEL_MENU);
         contentPanel.add(new InventoryPanel(currentUser), PANEL_INVENTORY);
@@ -308,6 +311,12 @@ public class MainFrame extends JFrame {
         cardLayout.show(contentPanel, panelId);
         headerTitle.setText(title);
         sidebar.setActiveItem(panelId);
+        
+        // Refresh POS panel data when navigating to it
+        if (PANEL_POS.equals(panelId) && posPanel != null) {
+            posPanel.refresh();
+        }
+        
         logger.debug("Navigated to: {}", panelId);
     }
     

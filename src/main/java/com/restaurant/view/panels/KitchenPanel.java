@@ -69,8 +69,8 @@ public class KitchenPanel extends JPanel {
         JPanel header = createHeader();
         add(header, BorderLayout.NORTH);
         
-        // Orders grid
-        ordersGrid = new JPanel(new MigLayout("wrap 4, gap 16", "[grow][grow][grow][grow]", ""));
+        // Orders grid - 3 columns responsive grid
+        ordersGrid = new JPanel(new MigLayout("wrap 3, gap 20", "[grow][grow][grow]", ""));
         ordersGrid.setOpaque(false);
         
         JScrollPane scrollPane = new JScrollPane(ordersGrid);
@@ -161,7 +161,7 @@ public class KitchenPanel extends JPanel {
             for (KitchenOrder order : orders) {
                 if (order.getStatus() != OrderStatus.READY) {
                     JPanel card = createOrderCard(order);
-                    ordersGrid.add(card, "w 280!, h 220!");
+                    ordersGrid.add(card, "w 340!, h 300!");
                 }
             }
         }
@@ -237,38 +237,38 @@ public class KitchenPanel extends JPanel {
         card.add(itemsPanel, "grow");
         
         // Action buttons
-        JPanel actionsPanel = new JPanel(new MigLayout("insets 0, gap 8", "[grow][grow]", ""));
+        JPanel actionsPanel = new JPanel(new MigLayout("insets 0, gap 10", "[grow][grow]", ""));
         actionsPanel.setOpaque(false);
         
         JButton startBtn = new JButton(order.getStatus() == OrderStatus.WAITING ? "🔥 Bắt đầu" : "Đang làm...");
-        startBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 11));
+        startBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 13));
         startBtn.setBackground(order.getStatus() == OrderStatus.WAITING ? STATUS_PREPARING : SURFACE);
         startBtn.setForeground(TEXT_LIGHT);
         startBtn.setBorderPainted(false);
         startBtn.setEnabled(order.getStatus() == OrderStatus.WAITING);
-        startBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 6");
+        startBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
         startBtn.addActionListener(e -> {
-            // Mark all items as being prepared
+            order.setStatus(OrderStatus.PREPARING);
             ToastNotification.info(SwingUtilities.getWindowAncestor(this), 
                 "Đang chuẩn bị: " + order.getTableName());
             refreshOrdersGrid();
         });
-        actionsPanel.add(startBtn, "grow");
+        actionsPanel.add(startBtn, "grow, h 38!");
         
         JButton doneBtn = new JButton("✓ Xong");
-        doneBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 11));
+        doneBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 13));
         doneBtn.setBackground(STATUS_NEW);
         doneBtn.setForeground(TEXT_LIGHT);
         doneBtn.setBorderPainted(false);
-        doneBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 6");
+        doneBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
         doneBtn.addActionListener(e -> {
             orderManager.completeOrder(order.getId());
             ToastNotification.success(SwingUtilities.getWindowAncestor(this), 
                 "Hoàn thành: " + order.getTableName());
         });
-        actionsPanel.add(doneBtn, "grow");
+        actionsPanel.add(doneBtn, "grow, h 38!");
         
-        card.add(actionsPanel, "growx");
+        card.add(actionsPanel, "growx, gaptop 8");
         
         return card;
     }

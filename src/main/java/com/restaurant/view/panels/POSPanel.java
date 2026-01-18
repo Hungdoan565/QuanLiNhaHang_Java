@@ -148,6 +148,20 @@ public class POSPanel extends JPanel {
                 logger.info("Reminder shown for reservation: {}", reservation.getId());
             });
         });
+        
+        // Listen for kitchen order ready notifications
+        KitchenOrderManager.getInstance().addReadyListener(order -> {
+            SwingUtilities.invokeLater(() -> {
+                // Auto refresh table grid to show "Món sẵn sàng" badge
+                refreshTableGrid();
+                
+                // Show toast notification
+                ToastNotification.success(SwingUtilities.getWindowAncestor(this),
+                    "🍽️ " + order.getTableName() + " - Món đã sẵn sàng phục vụ!");
+                
+                logger.info("Order ready for table: {}", order.getTableName());
+            });
+        });
     }
     
     private JPanel createLeftPanel() {
@@ -347,6 +361,7 @@ public class POSPanel extends JPanel {
         
         orderSectionContent.add(createEmptyState(), "empty");
         orderSectionContent.add(createOrderDetailPanel(), "detail");
+        orderSectionContent.add(createReservationInfoPanel(), "reservation");
         
         panel.add(orderSectionContent, "grow");
         
@@ -355,6 +370,136 @@ public class POSPanel extends JPanel {
         panel.add(actionButtonsPanel, "dock south, growx");
         
         return panel;
+    }
+    
+    // Panel hiển thị thông tin đặt bàn
+    private JPanel reservationInfoPanel;
+    private JLabel resTableLabel, resCustomerLabel, resPhoneLabel, resTimeLabel, resGuestLabel, resNotesLabel;
+    
+    private JPanel createReservationInfoPanel() {
+        reservationInfoPanel = new JPanel(new MigLayout("wrap, insets 0, gapy 12", "[grow]", ""));
+        reservationInfoPanel.setOpaque(false);
+        
+        // Info card
+        JPanel infoCard = new JPanel(new MigLayout("wrap, insets 16, gapy 8", "[grow]", ""));
+        infoCard.setBackground(new Color(WARNING.getRed(), WARNING.getGreen(), WARNING.getBlue(), 30));
+        infoCard.putClientProperty(FlatClientProperties.STYLE, "arc: 12");
+        
+        JLabel headerLabel = new JLabel("📅 Thông tin đặt bàn");
+        headerLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 16));
+        headerLabel.setForeground(WARNING);
+        infoCard.add(headerLabel, "center, gapbottom 8");
+        
+        resTableLabel = new JLabel("🪑 --");
+        resTableLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 18));
+        resTableLabel.setForeground(TEXT_PRIMARY);
+        infoCard.add(resTableLabel);
+        
+        resCustomerLabel = new JLabel("👤 --");
+        resCustomerLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 15));
+        resCustomerLabel.setForeground(TEXT_PRIMARY);
+        infoCard.add(resCustomerLabel);
+        
+        resPhoneLabel = new JLabel("📱 --");
+        resPhoneLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 14));
+        resPhoneLabel.setForeground(TEXT_SECONDARY);
+        infoCard.add(resPhoneLabel);
+        
+        resTimeLabel = new JLabel("⏰ --");
+        resTimeLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 14));
+        resTimeLabel.setForeground(PRIMARY);
+        infoCard.add(resTimeLabel);
+        
+        resGuestLabel = new JLabel("👥 --");
+        resGuestLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 14));
+        resGuestLabel.setForeground(TEXT_SECONDARY);
+        infoCard.add(resGuestLabel);
+        
+        resNotesLabel = new JLabel("");
+        resNotesLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.ITALIC, 13));
+        resNotesLabel.setForeground(TEXT_SECONDARY);
+        infoCard.add(resNotesLabel);
+        
+        reservationInfoPanel.add(infoCard, "growx");
+        
+        // Action buttons
+        JPanel actionPanel = new JPanel(new MigLayout("insets 0, gap 10", "[grow][grow]", ""));
+        actionPanel.setOpaque(false);
+        
+        JButton arrivedBtn = new JButton("✓ Khách đã đến");
+        arrivedBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 13));
+        arrivedBtn.setBackground(SUCCESS);
+        arrivedBtn.setForeground(Color.WHITE);
+        arrivedBtn.setBorderPainted(false);
+        arrivedBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        arrivedBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        arrivedBtn.addActionListener(e -> handleCustomerArrived());
+        actionPanel.add(arrivedBtn, "grow, h 42!");
+        
+        JButton cancelBtn = new JButton("✕ Hủy đặt");
+        cancelBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 13));
+        cancelBtn.setBackground(ERROR);
+        cancelBtn.setForeground(Color.WHITE);
+        cancelBtn.setBorderPainted(false);
+        cancelBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        cancelBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        cancelBtn.addActionListener(e -> handleCancelReservation());
+        actionPanel.add(cancelBtn, "grow, h 42!");
+        
+        reservationInfoPanel.add(actionPanel, "growx, gaptop 12");
+        
+        return reservationInfoPanel;
+    }
+    
+    private Reservation currentReservation;
+    
+    private void handleCustomerArrived() {
+        if (currentReservation == null || selectedTable == null) return;
+        
+        // Mark reservation as arrived
+        ReservationService.getInstance().markArrived(currentReservation.getId());
+        
+        // Open table with guest count from reservation
+        selectedTable.setStatus(TableStatus.OCCUPIED);
+        selectedTable.setGuestCount(currentReservation.getGuestCount());
+        selectedTable.setOccupiedSince(LocalDateTime.now());
+        selectedTable.setCurrentOrderCode("ORD-" + String.format("%03d", (int)(Math.random() * 1000)));
+        
+        orderItems.clear();
+        refreshTableGrid();
+        updateOrderSection();
+        updateButtonStates();
+        
+        // Switch to menu
+        menuBtn.doClick();
+        
+        ToastNotification.success(SwingUtilities.getWindowAncestor(this),
+            "Đã mở bàn cho " + currentReservation.getCustomerName() + " - Chọn món từ Thực đơn");
+    }
+    
+    private void handleCancelReservation() {
+        if (currentReservation == null || selectedTable == null) return;
+        
+        int confirm = JOptionPane.showConfirmDialog(
+            SwingUtilities.getWindowAncestor(this),
+            "Hủy đặt bàn của " + currentReservation.getCustomerName() + "?",
+            "Xác nhận hủy",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.WARNING_MESSAGE
+        );
+        
+        if (confirm == JOptionPane.YES_OPTION) {
+            ReservationService.getInstance().cancel(currentReservation.getId());
+            
+            selectedTable.setStatus(TableStatus.AVAILABLE);
+            currentReservation = null;
+            
+            refreshTableGrid();
+            updateOrderSection();
+            updateButtonStates();
+            
+            ToastNotification.info(SwingUtilities.getWindowAncestor(this), "Đã hủy đặt bàn");
+        }
     }
     
     private JPanel createEmptyState() {
@@ -503,10 +648,33 @@ public class POSPanel extends JPanel {
         tables.clear();
         try {
             tables.addAll(tableService.getAllTables());
+            
+            // Sync reservation status from database
+            syncReservationStatus();
         } catch (Exception e) {
             logger.error("Error loading tables", e);
         }
         refreshTableGrid();
+    }
+    
+    /**
+     * Sync table status with active reservations from database
+     */
+    private void syncReservationStatus() {
+        try {
+            for (Table table : tables) {
+                java.util.Optional<Reservation> resOpt = ReservationService.getInstance()
+                    .getActiveForTable(table.getId());
+                
+                if (resOpt.isPresent()) {
+                    // Has active reservation - set to RESERVED
+                    table.setStatus(TableStatus.RESERVED);
+                    logger.debug("Table {} has active reservation, setting RESERVED", table.getName());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error syncing reservation status", e);
+        }
     }
     
     private void loadCategories() {
@@ -598,6 +766,19 @@ public class POSPanel extends JPanel {
             timeLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 10));
             timeLabel.setForeground(TEXT_SECONDARY);
             card.add(timeLabel, "center");
+        }
+        
+        // Ready indicator (if kitchen completed order)
+        if (table.hasActiveOrder() && 
+            KitchenOrderManager.getInstance().hasReadyOrderForTable(table.getName())) {
+            JPanel readyBadge = new JPanel(new MigLayout("insets 3 8", "[]", ""));
+            readyBadge.setBackground(SUCCESS);
+            readyBadge.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+            JLabel readyLabel = new JLabel("🍽️ Món sẵn sàng");
+            readyLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 10));
+            readyLabel.setForeground(Color.WHITE);
+            readyBadge.add(readyLabel);
+            card.add(readyBadge, "center, gaptop 4");
         }
         
         // Click handlers
@@ -837,6 +1018,46 @@ public class POSPanel extends JPanel {
             return;
         }
         
+        // DEBUG: Log table status
+        logger.info("updateOrderSection: Table={}, Status={}, ID={}", 
+            selectedTable.getName(), selectedTable.getStatus(), selectedTable.getId());
+        
+        // Check if table is RESERVED
+        if (selectedTable.getStatus() == TableStatus.RESERVED) {
+            logger.info("Table is RESERVED, looking for reservation...");
+            
+            // Load reservation info from database
+            java.util.Optional<Reservation> resOpt = ReservationService.getInstance()
+                .getActiveForTable(selectedTable.getId());
+            
+            logger.info("Reservation found: {}", resOpt.isPresent());
+            
+            if (resOpt.isPresent()) {
+                currentReservation = resOpt.get();
+                
+                // Update labels
+                resTableLabel.setText("🪑 " + selectedTable.getName());
+                resCustomerLabel.setText("👤 " + currentReservation.getCustomerName());
+                resPhoneLabel.setText("📱 " + currentReservation.getCustomerPhone());
+                resTimeLabel.setText("⏰ " + currentReservation.getFormattedTime());
+                resGuestLabel.setText("👥 " + currentReservation.getGuestCount() + " khách");
+                
+                String notes = currentReservation.getNotes();
+                if (notes != null && !notes.isEmpty()) {
+                    resNotesLabel.setText("📝 " + notes);
+                    resNotesLabel.setVisible(true);
+                } else {
+                    resNotesLabel.setVisible(false);
+                }
+                
+                cl.show(orderSectionContent, "reservation");
+            } else {
+                // No reservation found in DB - show empty
+                cl.show(orderSectionContent, "empty");
+            }
+            return;
+        }
+        
         if (selectedTable.hasActiveOrder()) {
             orderTableName.setText("🪑 " + selectedTable.getName());
             
@@ -845,11 +1066,6 @@ public class POSPanel extends JPanel {
                 mins = Duration.between(selectedTable.getOccupiedSince(), LocalDateTime.now()).toMinutes();
             }
             orderGuestInfo.setText("👤 " + selectedTable.getGuestCount() + " khách | ⏱ " + mins + " phút");
-            
-            // Load demo items if empty
-            if (orderItems.isEmpty()) {
-                // Don't add demo items - let user add from menu
-            }
             
             refreshOrderItems();
             cl.show(orderSectionContent, "detail");
@@ -1126,7 +1342,7 @@ public class POSPanel extends JPanel {
         // Create dialog
         JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this), 
             "Đặt trước " + selectedTable.getName(), Dialog.ModalityType.APPLICATION_MODAL);
-        dialog.setSize(420, 520);
+        dialog.setSize(500, 620);
         dialog.setLocationRelativeTo(this);
         dialog.setResizable(false);
         

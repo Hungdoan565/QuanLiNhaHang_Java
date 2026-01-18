@@ -17,7 +17,9 @@ public class KitchenOrderManager {
     private static KitchenOrderManager instance;
     
     private final List<KitchenOrder> pendingOrders = new CopyOnWriteArrayList<>();
+    private final List<KitchenOrder> completedOrders = new CopyOnWriteArrayList<>();
     private final List<Consumer<List<KitchenOrder>>> listeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<KitchenOrder>> readyListeners = new CopyOnWriteArrayList<>();
     
     private KitchenOrderManager() {}
     
@@ -44,10 +46,53 @@ public class KitchenOrderManager {
     }
     
     /**
-     * Mark order as completed (remove from list)
+     * Get completed orders ready for serving
+     */
+    public List<KitchenOrder> getCompletedOrders() {
+        return new ArrayList<>(completedOrders);
+    }
+    
+    /**
+     * Check if a table has order ready for serving
+     */
+    public boolean hasReadyOrderForTable(String tableName) {
+        return completedOrders.stream()
+            .anyMatch(o -> o.getTableName().equals(tableName));
+    }
+    
+    /**
+     * Get ready order for table
+     */
+    public KitchenOrder getReadyOrderForTable(String tableName) {
+        return completedOrders.stream()
+            .filter(o -> o.getTableName().equals(tableName))
+            .findFirst()
+            .orElse(null);
+    }
+    
+    /**
+     * Mark order as completed and ready for serving
      */
     public void completeOrder(int orderId) {
-        pendingOrders.removeIf(o -> o.getId() == orderId);
+        for (KitchenOrder order : pendingOrders) {
+            if (order.getId() == orderId) {
+                order.setStatus(OrderStatus.READY);
+                completedOrders.add(order);
+                pendingOrders.remove(order);
+                
+                // Notify ready listeners (POS)
+                notifyReadyListeners(order);
+                break;
+            }
+        }
+        notifyListeners();
+    }
+    
+    /**
+     * Mark order as served (remove from completed)
+     */
+    public void markServed(String tableName) {
+        completedOrders.removeIf(o -> o.getTableName().equals(tableName));
         notifyListeners();
     }
     
@@ -78,10 +123,30 @@ public class KitchenOrderManager {
         listeners.remove(listener);
     }
     
+    /**
+     * Register listener for order ready notifications (used by POS)
+     */
+    public void addReadyListener(Consumer<KitchenOrder> listener) {
+        readyListeners.add(listener);
+    }
+    
+    /**
+     * Remove ready listener
+     */
+    public void removeReadyListener(Consumer<KitchenOrder> listener) {
+        readyListeners.remove(listener);
+    }
+    
     private void notifyListeners() {
         List<KitchenOrder> snapshot = new ArrayList<>(pendingOrders);
         for (Consumer<List<KitchenOrder>> listener : listeners) {
             listener.accept(snapshot);
+        }
+    }
+    
+    private void notifyReadyListeners(KitchenOrder order) {
+        for (Consumer<KitchenOrder> listener : readyListeners) {
+            listener.accept(order);
         }
     }
     
@@ -90,6 +155,7 @@ public class KitchenOrderManager {
      */
     public void clear() {
         pendingOrders.clear();
+        completedOrders.clear();
         notifyListeners();
     }
     
@@ -119,6 +185,7 @@ public class KitchenOrderManager {
         public LocalDateTime getCreatedAt() { return createdAt; }
         public List<OrderItem> getItems() { return items; }
         public OrderStatus getStatus() { return status; }
+        public void setStatus(OrderStatus status) { this.status = status; }
         
         public void markItemReady(String itemName) {
             for (OrderItem item : items) {
