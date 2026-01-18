@@ -269,3 +269,136 @@ CREATE INDEX idx_reservations_time ON reservations(reservation_time);
 -- ==============================================
 -- End of Schema
 -- ==============================================
+
+-- ==============================================
+-- 14. MODIFIER_GROUPS (Nhóm tùy chọn: Size, Topping...)
+-- ==============================================
+CREATE TABLE IF NOT EXISTS modifier_groups (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL COMMENT 'Tên nhóm: Chọn Size, Topping, Mức đá',
+    selection_type ENUM('SINGLE', 'MULTIPLE') DEFAULT 'SINGLE' COMMENT 'Chọn 1 hoặc nhiều',
+    is_required BOOLEAN DEFAULT FALSE COMMENT 'Bắt buộc phải chọn?',
+    max_selections INT DEFAULT NULL COMMENT 'Giới hạn số lượng chọn (NULL = không giới hạn)',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ==============================================
+-- 15. MODIFIERS (Chi tiết tùy chọn)
+-- ==============================================
+CREATE TABLE IF NOT EXISTS modifiers (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    group_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL COMMENT 'Size S, Size M, Thêm trân châu',
+    price_adjustment DECIMAL(15,2) DEFAULT 0 COMMENT 'Giá cộng thêm: +5000, +10000',
+    is_default BOOLEAN DEFAULT FALSE COMMENT 'Option mặc định',
+    display_order INT DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (group_id) REFERENCES modifier_groups(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ==============================================
+-- 16. PRODUCT_MODIFIER_GROUPS (Liên kết sản phẩm - modifier)
+-- ==============================================
+CREATE TABLE IF NOT EXISTS product_modifier_groups (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    product_id INT NOT NULL,
+    modifier_group_id INT NOT NULL,
+    display_order INT DEFAULT 0,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    FOREIGN KEY (modifier_group_id) REFERENCES modifier_groups(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_product_modifier (product_id, modifier_group_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ==============================================
+-- 17. STOCK_TRANSACTIONS (Nhật ký nhập/xuất kho)
+-- ==============================================
+CREATE TABLE IF NOT EXISTS stock_transactions (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    ingredient_id INT NOT NULL,
+    type ENUM('IN', 'OUT', 'ADJUSTMENT', 'SALE') NOT NULL COMMENT 'Nhập/Xuất/Điều chỉnh/Bán',
+    quantity DECIMAL(15,3) NOT NULL COMMENT 'Số lượng thay đổi (+ hoặc -)',
+    unit_cost DECIMAL(15,2) COMMENT 'Giá nhập mỗi đơn vị (cho type=IN)',
+    reference_type VARCHAR(50) COMMENT 'ORDER, MANUAL, STOCKTAKE',
+    reference_id INT COMMENT 'ID của order hoặc phiếu kiểm kê',
+    note TEXT,
+    user_id INT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE RESTRICT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ==============================================
+-- 18. SETTINGS (Cấu hình hệ thống)
+-- ==============================================
+CREATE TABLE IF NOT EXISTS settings (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    setting_key VARCHAR(100) NOT NULL UNIQUE,
+    setting_value TEXT,
+    setting_type ENUM('STRING', 'NUMBER', 'BOOLEAN', 'JSON') DEFAULT 'STRING',
+    description VARCHAR(255),
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by INT,
+    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ==============================================
+-- NEW INDEXES
+-- ==============================================
+CREATE INDEX idx_modifiers_group ON modifiers(group_id);
+CREATE INDEX idx_product_modifiers_product ON product_modifier_groups(product_id);
+CREATE INDEX idx_stock_trans_ingredient ON stock_transactions(ingredient_id);
+CREATE INDEX idx_stock_trans_type ON stock_transactions(type);
+CREATE INDEX idx_stock_trans_created ON stock_transactions(created_at);
+CREATE INDEX idx_settings_key ON settings(setting_key);
+
+-- ==============================================
+-- DEFAULT SETTINGS DATA
+-- ==============================================
+INSERT INTO settings (setting_key, setting_value, setting_type, description) VALUES
+('restaurant_name', 'Nhà Hàng ABC', 'STRING', 'Tên nhà hàng'),
+('restaurant_address', '123 Đường ABC, Quận 1, TP.HCM', 'STRING', 'Địa chỉ nhà hàng'),
+('restaurant_phone', '0901234567', 'STRING', 'Số điện thoại'),
+('bank_name', 'Vietcombank', 'STRING', 'Tên ngân hàng'),
+('bank_account_number', '1234567890', 'STRING', 'Số tài khoản ngân hàng'),
+('bank_account_name', 'NGUYEN VAN A', 'STRING', 'Tên chủ tài khoản'),
+('bank_qr_image', '', 'STRING', 'Path đến ảnh QR chuyển khoản'),
+('vat_percent', '8', 'NUMBER', 'Phần trăm thuế VAT'),
+('service_charge_percent', '5', 'NUMBER', 'Phần trăm phí dịch vụ'),
+('receipt_footer', 'Cảm ơn quý khách! Hẹn gặp lại.', 'STRING', 'Dòng chữ cuối hóa đơn'),
+('currency_symbol', 'VNĐ', 'STRING', 'Ký hiệu tiền tệ'),
+('kitchen_auto_print', 'true', 'BOOLEAN', 'Tự động in xuống bếp khi order');
+
+-- ==============================================
+-- SAMPLE MODIFIER DATA
+-- ==============================================
+INSERT INTO modifier_groups (name, selection_type, is_required) VALUES
+('Chọn Size', 'SINGLE', TRUE),
+('Topping', 'MULTIPLE', FALSE),
+('Mức đá', 'SINGLE', FALSE),
+('Mức đường', 'SINGLE', FALSE);
+
+INSERT INTO modifiers (group_id, name, price_adjustment, is_default, display_order) VALUES
+-- Size (group_id = 1)
+(1, 'Size S', 0, TRUE, 1),
+(1, 'Size M', 5000, FALSE, 2),
+(1, 'Size L', 10000, FALSE, 3),
+-- Topping (group_id = 2)
+(2, 'Trân châu đen', 8000, FALSE, 1),
+(2, 'Trân châu trắng', 8000, FALSE, 2),
+(2, 'Thạch dừa', 6000, FALSE, 3),
+(2, 'Pudding', 10000, FALSE, 4),
+-- Mức đá (group_id = 3)
+(3, 'Đá bình thường', 0, TRUE, 1),
+(3, 'Ít đá', 0, FALSE, 2),
+(3, 'Không đá', 0, FALSE, 3),
+-- Mức đường (group_id = 4)
+(4, '100% đường', 0, TRUE, 1),
+(4, '70% đường', 0, FALSE, 2),
+(4, '50% đường', 0, FALSE, 3),
+(4, '30% đường', 0, FALSE, 4),
+(4, 'Không đường', 0, FALSE, 5);
+
+-- ==============================================
+-- End of Additional Schema
+-- ==============================================

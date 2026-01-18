@@ -1,3 +1,4 @@
+
 # Build output
 target/
 *.jar
@@ -20,7 +21,6 @@ config/database.properties
 .classpath
 *.swp
 *.swo
-docs/
 
 # OS files
 .DS_Store

@@ -1,0 +1,401 @@
+package com.restaurant.view.panels;
+
+import com.formdev.flatlaf.FlatClientProperties;
+import com.restaurant.config.AppConfig;
+import com.restaurant.model.User;
+import com.restaurant.util.ToastNotification;
+import net.miginfocom.swing.MigLayout;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import javax.swing.*;
+import java.awt.*;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Settings Panel - Cài đặt hệ thống
+ * 
+ * Features:
+ * - Cài đặt nhà hàng (tên, địa chỉ, logo)
+ * - Cài đặt máy in
+ * - Cài đặt hóa đơn
+ * - Cài đặt hiển thị
+ */
+public class SettingsPanel extends JPanel {
+    
+    private static final Logger logger = LogManager.getLogger(SettingsPanel.class);
+    
+    // Colors
+    private static final Color BACKGROUND = Color.decode(AppConfig.Colors.BACKGROUND);
+    private static final Color SURFACE = Color.decode(AppConfig.Colors.SURFACE);
+    private static final Color TEXT_PRIMARY = Color.decode(AppConfig.Colors.TEXT_PRIMARY);
+    private static final Color TEXT_SECONDARY = Color.decode(AppConfig.Colors.TEXT_SECONDARY);
+    private static final Color PRIMARY = Color.decode(AppConfig.Colors.PRIMARY);
+    private static final Color BORDER = Color.decode(AppConfig.Colors.BORDER);
+    private static final Color SUCCESS = Color.decode(AppConfig.Colors.SUCCESS);
+    
+    private final User currentUser;
+    private final Map<String, JComponent> settingsFields = new HashMap<>();
+    
+    // Settings values (would be loaded from database)
+    private String restaurantName = "RestaurantPOS";
+    private String restaurantAddress = "123 Nguyễn Huệ, Quận 1, TP.HCM";
+    private String restaurantPhone = "028 1234 5678";
+    private String taxRate = "10";
+    private String serviceCharge = "5";
+    private boolean enableTax = true;
+    private boolean enableServiceCharge = true;
+    private boolean autoPrintKitchen = true;
+    private boolean printCustomerReceipt = true;
+    
+    public SettingsPanel(User user) {
+        this.currentUser = user;
+        initializeUI();
+    }
+    
+    private void initializeUI() {
+        setLayout(new BorderLayout(0, 16));
+        setBackground(BACKGROUND);
+        
+        // Action bar at top
+        JPanel actionBar = createActionBar();
+        add(actionBar, BorderLayout.NORTH);
+        
+        // Settings content
+        JPanel content = new JPanel(new MigLayout("wrap 2, gap 24", "[grow][grow]", ""));
+        content.setOpaque(false);
+        
+        // Left column
+        JPanel leftCol = new JPanel(new MigLayout("wrap, insets 0, gap 16", "[grow]", ""));
+        leftCol.setOpaque(false);
+        leftCol.add(createRestaurantInfoSection(), "grow");
+        leftCol.add(createReceiptSection(), "grow");
+        
+        // Right column
+        JPanel rightCol = new JPanel(new MigLayout("wrap, insets 0, gap 16", "[grow]", ""));
+        rightCol.setOpaque(false);
+        rightCol.add(createPrinterSection(), "grow");
+        rightCol.add(createDisplaySection(), "grow");
+        
+        content.add(leftCol, "grow");
+        content.add(rightCol, "grow");
+        
+        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane.setBorder(null);
+        scrollPane.setOpaque(false);
+        scrollPane.getViewport().setOpaque(false);
+        add(scrollPane, BorderLayout.CENTER);
+    }
+    
+    private JPanel createActionBar() {
+        JPanel bar = new JPanel(new MigLayout("insets 0", "push[]8[]", ""));
+        bar.setOpaque(false);
+        
+        JButton saveBtn = new JButton("💾 Lưu thay đổi");
+        saveBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 14));
+        saveBtn.setBackground(SUCCESS);
+        saveBtn.setForeground(Color.WHITE);
+        saveBtn.setBorderPainted(false);
+        saveBtn.setFocusPainted(false);
+        saveBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        saveBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        saveBtn.addActionListener(e -> saveSettings());
+        bar.add(saveBtn);
+        
+        JButton resetBtn = new JButton("↩️ Hoàn tác");
+        resetBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 14));
+        resetBtn.setBackground(SURFACE);
+        resetBtn.setForeground(TEXT_PRIMARY);
+        resetBtn.setBorderPainted(false);
+        resetBtn.setFocusPainted(false);
+        resetBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        resetBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        resetBtn.addActionListener(e -> resetSettings());
+        bar.add(resetBtn);
+        
+        return bar;
+    }
+    
+    private JPanel createRestaurantInfoSection() {
+        JPanel section = createSection("🏪 Thông tin nhà hàng");
+        JPanel content = (JPanel) section.getComponent(1);
+        
+        // Name
+        content.add(createLabel("Tên nhà hàng:"));
+        JTextField nameField = createTextField(restaurantName);
+        settingsFields.put("restaurant.name", nameField);
+        content.add(nameField, "growx");
+        
+        // Address
+        content.add(createLabel("Địa chỉ:"));
+        JTextField addressField = createTextField(restaurantAddress);
+        settingsFields.put("restaurant.address", addressField);
+        content.add(addressField, "growx");
+        
+        // Phone
+        content.add(createLabel("Số điện thoại:"));
+        JTextField phoneField = createTextField(restaurantPhone);
+        settingsFields.put("restaurant.phone", phoneField);
+        content.add(phoneField, "growx");
+        
+        // Logo
+        content.add(createLabel("Logo:"));
+        JPanel logoPanel = new JPanel(new MigLayout("insets 0, gap 8", "[][]", ""));
+        logoPanel.setOpaque(false);
+        
+        JLabel logoPreview = new JLabel("🍽️");
+        logoPreview.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 48));
+        logoPreview.setBorder(BorderFactory.createLineBorder(BORDER, 1));
+        logoPreview.setPreferredSize(new Dimension(80, 80));
+        logoPreview.setHorizontalAlignment(SwingConstants.CENTER);
+        logoPanel.add(logoPreview);
+        
+        JButton uploadBtn = new JButton("📤 Tải lên");
+        uploadBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 12));
+        uploadBtn.addActionListener(e -> uploadLogo());
+        logoPanel.add(uploadBtn);
+        
+        content.add(logoPanel, "growx");
+        
+        return section;
+    }
+    
+    private JPanel createReceiptSection() {
+        JPanel section = createSection("🧾 Cài đặt hóa đơn");
+        JPanel content = (JPanel) section.getComponent(1);
+        
+        // Tax
+        JCheckBox taxCheck = new JCheckBox("Tính thuế VAT", enableTax);
+        taxCheck.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 14));
+        taxCheck.setOpaque(false);
+        settingsFields.put("receipt.enableTax", taxCheck);
+        content.add(taxCheck, "span 2");
+        
+        content.add(createLabel("Thuế suất (%):"));
+        JTextField taxField = createTextField(taxRate);
+        settingsFields.put("receipt.taxRate", taxField);
+        content.add(taxField, "w 100!");
+        
+        // Service charge
+        JCheckBox serviceCheck = new JCheckBox("Phí dịch vụ", enableServiceCharge);
+        serviceCheck.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 14));
+        serviceCheck.setOpaque(false);
+        settingsFields.put("receipt.enableService", serviceCheck);
+        content.add(serviceCheck, "span 2, gaptop 8");
+        
+        content.add(createLabel("Phí dịch vụ (%):"));
+        JTextField serviceField = createTextField(serviceCharge);
+        settingsFields.put("receipt.serviceCharge", serviceField);
+        content.add(serviceField, "w 100!");
+        
+        // Receipt header/footer
+        content.add(createLabel("Ghi chú cuối hóa đơn:"), "gaptop 8");
+        JTextArea footerArea = new JTextArea("Cảm ơn quý khách!\nHẹn gặp lại!", 3, 20);
+        footerArea.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 13));
+        footerArea.setLineWrap(true);
+        JScrollPane footerScroll = new JScrollPane(footerArea);
+        settingsFields.put("receipt.footer", footerArea);
+        content.add(footerScroll, "growx");
+        
+        return section;
+    }
+    
+    private JPanel createPrinterSection() {
+        JPanel section = createSection("🖨️ Cài đặt máy in");
+        JPanel content = (JPanel) section.getComponent(1);
+        
+        // Kitchen printer
+        content.add(createLabel("Máy in bếp:"));
+        JComboBox<String> kitchenPrinter = new JComboBox<>(new String[]{
+            "Kitchen_Printer", "Printer_01", "Không in"
+        });
+        kitchenPrinter.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        settingsFields.put("printer.kitchen", kitchenPrinter);
+        content.add(kitchenPrinter, "growx");
+        
+        // Bar printer
+        content.add(createLabel("Máy in bar:"));
+        JComboBox<String> barPrinter = new JComboBox<>(new String[]{
+            "Bar_Printer", "Printer_02", "Không in"
+        });
+        barPrinter.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        settingsFields.put("printer.bar", barPrinter);
+        content.add(barPrinter, "growx");
+        
+        // Cashier printer
+        content.add(createLabel("Máy in thu ngân:"));
+        JComboBox<String> cashierPrinter = new JComboBox<>(new String[]{
+            "Cashier_Printer", "Printer_03", "Không in"
+        });
+        cashierPrinter.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        settingsFields.put("printer.cashier", cashierPrinter);
+        content.add(cashierPrinter, "growx");
+        
+        // Options
+        JCheckBox autoPrintCheck = new JCheckBox("Tự động in order xuống bếp", autoPrintKitchen);
+        autoPrintCheck.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 14));
+        autoPrintCheck.setOpaque(false);
+        settingsFields.put("printer.autoPrint", autoPrintCheck);
+        content.add(autoPrintCheck, "span 2, gaptop 8");
+        
+        JCheckBox printReceiptCheck = new JCheckBox("In hóa đơn cho khách", printCustomerReceipt);
+        printReceiptCheck.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 14));
+        printReceiptCheck.setOpaque(false);
+        settingsFields.put("printer.printReceipt", printReceiptCheck);
+        content.add(printReceiptCheck, "span 2");
+        
+        // Test print button
+        JButton testBtn = new JButton("🖨️ In thử");
+        testBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 12));
+        testBtn.addActionListener(e -> testPrint());
+        content.add(testBtn, "span 2, gaptop 8, align right");
+        
+        return section;
+    }
+    
+    private JPanel createDisplaySection() {
+        JPanel section = createSection("🎨 Giao diện hiển thị");
+        JPanel content = (JPanel) section.getComponent(1);
+        
+        // Theme
+        content.add(createLabel("Giao diện:"));
+        JComboBox<String> themeCombo = new JComboBox<>(new String[]{
+            "Sáng (Light)", "Tối (Dark)", "Tự động theo hệ thống"
+        });
+        themeCombo.setSelectedIndex(0);
+        themeCombo.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        settingsFields.put("display.theme", themeCombo);
+        content.add(themeCombo, "growx");
+        
+        // Primary color
+        content.add(createLabel("Màu chủ đạo:"));
+        JPanel colorPanel = new JPanel(new MigLayout("insets 0, gap 8", "[][][][][]", ""));
+        colorPanel.setOpaque(false);
+        
+        String[] colors = {"#E85A4F", "#3498DB", "#2ECC71", "#9B59B6", "#F39C12"};
+        ButtonGroup colorGroup = new ButtonGroup();
+        for (String color : colors) {
+            JToggleButton colorBtn = new JToggleButton();
+            colorBtn.setPreferredSize(new Dimension(32, 32));
+            colorBtn.setBackground(Color.decode(color));
+            colorBtn.setBorderPainted(false);
+            colorBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 999");
+            colorBtn.setSelected(color.equals("#E85A4F"));
+            colorGroup.add(colorBtn);
+            colorPanel.add(colorBtn);
+        }
+        content.add(colorPanel, "growx");
+        
+        // Font size
+        content.add(createLabel("Cỡ chữ:"));
+        JSlider fontSlider = new JSlider(12, 18, 14);
+        fontSlider.setMajorTickSpacing(2);
+        fontSlider.setPaintTicks(true);
+        fontSlider.setPaintLabels(true);
+        fontSlider.setOpaque(false);
+        settingsFields.put("display.fontSize", fontSlider);
+        content.add(fontSlider, "growx");
+        
+        // Kitchen display settings
+        content.add(createLabel("Màn hình bếp:"), "gaptop 8");
+        JComboBox<String> kitchenLayout = new JComboBox<>(new String[]{
+            "4 cột", "3 cột", "2 cột"
+        });
+        kitchenLayout.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        settingsFields.put("display.kitchenCols", kitchenLayout);
+        content.add(kitchenLayout, "growx");
+        
+        return section;
+    }
+    
+    private JPanel createSection(String title) {
+        JPanel section = new JPanel(new MigLayout("wrap, insets 0", "[grow]", "[]0[]"));
+        section.setOpaque(false);
+        
+        // Title
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 16));
+        titleLabel.setForeground(TEXT_PRIMARY);
+        titleLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
+        section.add(titleLabel);
+        
+        // Content card
+        JPanel content = new JPanel(new MigLayout("wrap 2, insets 16, gap 8 12", "[][grow]", ""));
+        content.setBackground(SURFACE);
+        content.setBorder(BorderFactory.createLineBorder(BORDER, 1));
+        content.putClientProperty(FlatClientProperties.STYLE, "arc: 12");
+        section.add(content, "grow");
+        
+        return section;
+    }
+    
+    private JLabel createLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 14));
+        label.setForeground(TEXT_PRIMARY);
+        return label;
+    }
+    
+    private JTextField createTextField(String value) {
+        JTextField field = new JTextField(value, 20);
+        field.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 14));
+        field.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        return field;
+    }
+    
+    private void saveSettings() {
+        // TODO: Save to database
+        logger.info("Saving settings...");
+        
+        // Collect values from fields
+        for (Map.Entry<String, JComponent> entry : settingsFields.entrySet()) {
+            String key = entry.getKey();
+            JComponent comp = entry.getValue();
+            
+            if (comp instanceof JTextField tf) {
+                logger.debug("Setting {}: {}", key, tf.getText());
+            } else if (comp instanceof JCheckBox cb) {
+                logger.debug("Setting {}: {}", key, cb.isSelected());
+            } else if (comp instanceof JComboBox<?> combo) {
+                logger.debug("Setting {}: {}", key, combo.getSelectedItem());
+            }
+        }
+        
+        ToastNotification.success(SwingUtilities.getWindowAncestor(this), "Đã lưu cài đặt!");
+    }
+    
+    private void resetSettings() {
+        int confirm = JOptionPane.showConfirmDialog(
+            SwingUtilities.getWindowAncestor(this),
+            "Hoàn tác tất cả thay đổi chưa lưu?",
+            "Xác nhận",
+            JOptionPane.YES_NO_OPTION
+        );
+        
+        if (confirm == JOptionPane.YES_OPTION) {
+            // TODO: Reload from database
+            ToastNotification.info(SwingUtilities.getWindowAncestor(this), "Đã hoàn tác thay đổi");
+        }
+    }
+    
+    private void uploadLogo() {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Chọn logo");
+        fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+            "Hình ảnh (PNG, JPG)", "png", "jpg", "jpeg"
+        ));
+        
+        int result = fileChooser.showOpenDialog(SwingUtilities.getWindowAncestor(this));
+        if (result == JFileChooser.APPROVE_OPTION) {
+            // TODO: Handle logo upload
+            ToastNotification.success(SwingUtilities.getWindowAncestor(this), 
+                "Đã chọn: " + fileChooser.getSelectedFile().getName());
+        }
+    }
+    
+    private void testPrint() {
+        ToastNotification.info(SwingUtilities.getWindowAncestor(this), 
+            "Đang gửi lệnh in thử... (Demo)");
+    }
+}

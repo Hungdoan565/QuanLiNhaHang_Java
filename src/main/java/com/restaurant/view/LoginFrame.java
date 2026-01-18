@@ -503,22 +503,14 @@ public class LoginFrame extends JFrame {
     }
     
     private void openMainFrame(User user) {
-        String roleInfo = String.format(
-            "<html><div style='text-align: center;'>" +
-            "<h2>Xin chào, %s!</h2>" +
-            "<p>Vai trò: <b>%s</b></p>" +
-            "<br><p><i>MainFrame sẽ được xây dựng tiếp theo...</i></p>" +
-            "</div></html>",
-            user.getDisplayName(),
-            user.getRoleName()
-        );
+        // Close login frame
+        dispose();
         
-        JOptionPane.showMessageDialog(
-            this,
-            roleInfo,
-            "Đăng nhập thành công",
-            JOptionPane.INFORMATION_MESSAGE
-        );
+        // Open main frame
+        SwingUtilities.invokeLater(() -> {
+            MainFrame mainFrame = new MainFrame(user);
+            mainFrame.setVisible(true);
+        });
     }
     
     private void showStatus(String message, boolean isError) {
