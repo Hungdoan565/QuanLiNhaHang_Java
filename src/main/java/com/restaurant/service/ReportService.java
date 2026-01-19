@@ -182,6 +182,75 @@ public class ReportService {
         return getSummary(prevFrom, prevTo);
     }
     
+    /**
+     * Lấy chi tiết các đơn hàng theo ngày
+     */
+    public List<OrderWithDetails> getOrdersByDate(LocalDate date) {
+        List<OrderWithDetails> result = new ArrayList<>();
+        
+        String orderSql = """
+            SELECT o.id, o.order_code, o.table_id, t.name as table_name,
+                   o.guest_count, o.total_amount, o.completed_at
+            FROM orders o
+            LEFT JOIN tables t ON o.table_id = t.id
+            WHERE o.status = 'COMPLETED' AND DATE(o.completed_at) = ?
+            ORDER BY o.completed_at DESC
+            """;
+        
+        String detailSql = """
+            SELECT od.id, od.product_id, p.name as product_name, 
+                   od.quantity, od.unit_price, od.subtotal
+            FROM order_details od
+            JOIN products p ON od.product_id = p.id
+            WHERE od.order_id = ? AND od.status != 'CANCELLED'
+            ORDER BY od.created_at
+            """;
+        
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement orderStmt = conn.prepareStatement(orderSql);
+             PreparedStatement detailStmt = conn.prepareStatement(detailSql)) {
+            
+            orderStmt.setDate(1, Date.valueOf(date));
+            ResultSet orderRs = orderStmt.executeQuery();
+            
+            while (orderRs.next()) {
+                int orderId = orderRs.getInt("id");
+                String orderCode = orderRs.getString("order_code");
+                String tableName = orderRs.getString("table_name");
+                int guestCount = orderRs.getInt("guest_count");
+                BigDecimal totalAmount = orderRs.getBigDecimal("total_amount");
+                LocalDateTime completedAt = orderRs.getTimestamp("completed_at").toLocalDateTime();
+                
+                // Load order details
+                List<OrderItemDetail> items = new ArrayList<>();
+                detailStmt.setInt(1, orderId);
+                ResultSet detailRs = detailStmt.executeQuery();
+                
+                while (detailRs.next()) {
+                    items.add(new OrderItemDetail(
+                        detailRs.getInt("product_id"),
+                        detailRs.getString("product_name"),
+                        detailRs.getInt("quantity"),
+                        detailRs.getBigDecimal("unit_price"),
+                        detailRs.getBigDecimal("subtotal")
+                    ));
+                }
+                
+                result.add(new OrderWithDetails(
+                    orderId, orderCode, tableName, guestCount,
+                    totalAmount, completedAt, items
+                ));
+            }
+            
+            logger.info("Loaded {} orders for date {}", result.size(), date);
+            
+        } catch (SQLException e) {
+            logger.error("Error loading orders by date", e);
+        }
+        
+        return result;
+    }
+    
     // ========== Inner Classes ==========
     
     public static class DailyRevenue {
@@ -254,5 +323,57 @@ public class ReportService {
         public int totalGuests() { return totalGuests; }
         public int tablesUsed() { return tablesUsed; }
         public BigDecimal avgPerOrder() { return avgPerOrder; }
+    }
+    
+    public static class OrderWithDetails {
+        private final int orderId;
+        private final String orderCode;
+        private final String tableName;
+        private final int guestCount;
+        private final BigDecimal totalAmount;
+        private final LocalDateTime completedAt;
+        private final List<OrderItemDetail> items;
+        
+        public OrderWithDetails(int orderId, String orderCode, String tableName, int guestCount,
+                               BigDecimal totalAmount, LocalDateTime completedAt, List<OrderItemDetail> items) {
+            this.orderId = orderId;
+            this.orderCode = orderCode;
+            this.tableName = tableName;
+            this.guestCount = guestCount;
+            this.totalAmount = totalAmount;
+            this.completedAt = completedAt;
+            this.items = items;
+        }
+        
+        public int orderId() { return orderId; }
+        public String orderCode() { return orderCode; }
+        public String tableName() { return tableName; }
+        public int guestCount() { return guestCount; }
+        public BigDecimal totalAmount() { return totalAmount; }
+        public LocalDateTime completedAt() { return completedAt; }
+        public List<OrderItemDetail> items() { return items; }
+    }
+    
+    public static class OrderItemDetail {
+        private final int productId;
+        private final String productName;
+        private final int quantity;
+        private final BigDecimal unitPrice;
+        private final BigDecimal subtotal;
+        
+        public OrderItemDetail(int productId, String productName, int quantity,
+                              BigDecimal unitPrice, BigDecimal subtotal) {
+            this.productId = productId;
+            this.productName = productName;
+            this.quantity = quantity;
+            this.unitPrice = unitPrice;
+            this.subtotal = subtotal;
+        }
+        
+        public int productId() { return productId; }
+        public String productName() { return productName; }
+        public int quantity() { return quantity; }
+        public BigDecimal unitPrice() { return unitPrice; }
+        public BigDecimal subtotal() { return subtotal; }
     }
 }

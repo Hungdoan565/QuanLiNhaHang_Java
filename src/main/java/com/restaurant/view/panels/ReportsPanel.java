@@ -165,13 +165,18 @@ public class ReportsPanel extends JPanel {
         JPanel panel = new JPanel(new BorderLayout(0, 8));
         panel.setOpaque(false);
         
-        JLabel title = new JLabel("📈 Doanh thu theo ngày");
+        JLabel title = new JLabel("📈 Doanh thu theo ngày (Double-click để xem chi tiết)");
         title.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 16));
         title.setForeground(TEXT_PRIMARY);
         panel.add(title, BorderLayout.NORTH);
         
         String[] columns = {"Ngày", "Số đơn", "Doanh thu", "Giảm giá", "Thực thu"};
-        revenueModel = new DefaultTableModel(columns, 0);
+        revenueModel = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false; // Non-editable
+            }
+        };
         
         revenueTable = new JTable(revenueModel);
         revenueTable.setRowHeight(40);
@@ -179,6 +184,19 @@ public class ReportsPanel extends JPanel {
         revenueTable.getTableHeader().setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 13));
         revenueTable.setShowVerticalLines(false);
         revenueTable.setGridColor(BORDER);
+        revenueTable.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
+        revenueTable.setSelectionBackground(new Color(PRIMARY.getRed(), PRIMARY.getGreen(), PRIMARY.getBlue(), 50));
+        revenueTable.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+        
+        // Double-click to show order details
+        revenueTable.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    showOrderDetails();
+                }
+            }
+        });
         
         JPanel tableContainer = new JPanel(new BorderLayout());
         tableContainer.setBackground(SURFACE);
@@ -203,6 +221,35 @@ public class ReportsPanel extends JPanel {
         panel.add(tableContainer, BorderLayout.CENTER);
         
         return panel;
+    }
+    
+    private void showOrderDetails() {
+        int selectedRow = revenueTable.getSelectedRow();
+        if (selectedRow < 0) return;
+        
+        // Get date from first column (format: dd/MM)
+        String dateStr = (String) revenueModel.getValueAt(selectedRow, 0);
+        
+        // Parse date - add current year
+        try {
+            java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern("dd/MM");
+            java.time.MonthDay monthDay = java.time.MonthDay.parse(dateStr, fmt);
+            LocalDate selectedDate = monthDay.atYear(LocalDate.now().getYear());
+            
+            // Handle year boundary (e.g., viewing December data in January)
+            if (selectedDate.isAfter(LocalDate.now())) {
+                selectedDate = monthDay.atYear(LocalDate.now().getYear() - 1);
+            }
+            
+            // Show dialog
+            com.restaurant.view.dialogs.OrderDetailDialog dialog = 
+                new com.restaurant.view.dialogs.OrderDetailDialog(
+                    SwingUtilities.getWindowAncestor(this), selectedDate);
+            dialog.setVisible(true);
+            
+        } catch (Exception e) {
+            logger.error("Error parsing date: {}", dateStr, e);
+        }
     }
     
     private JPanel createTopProductsSection() {
