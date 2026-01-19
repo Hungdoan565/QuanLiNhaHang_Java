@@ -19,7 +19,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Random;
 
 /**
  * Reports Panel - Báo cáo doanh thu và thống kê
@@ -244,13 +243,8 @@ public class ReportsPanel extends JPanel {
     private void loadReportData() {
         calculateDateRange();
         
-        // Try real data first
-        boolean hasRealData = loadRealData();
-        
-        if (!hasRealData) {
-            logger.info("No real data found, loading demo data");
-            loadDemoData();
-        }
+        // Always load real data from database
+        loadRealData();
     }
     
     private void calculateDateRange() {
@@ -268,16 +262,12 @@ public class ReportsPanel extends JPanel {
         logger.debug("Date range: {} to {}", fromDate, toDate);
     }
     
-    private boolean loadRealData() {
+    private void loadRealData() {
         try {
-            // Load summary stats
+            // Load summary stats - ALWAYS show real data
             ReportSummary summary = reportService.getSummary(fromDate, toDate);
             
-            if (summary.totalOrders() == 0) {
-                return false;
-            }
-            
-            // Update stats cards
+            // Update stats cards with real values (even if 0)
             statRevenueValue.setText(formatCurrency(summary.totalRevenue()));
             statOrdersValue.setText(String.valueOf(summary.totalOrders()));
             statGuestsValue.setText(String.valueOf(summary.totalGuests()));
@@ -289,15 +279,26 @@ public class ReportsPanel extends JPanel {
             BigDecimal total = BigDecimal.ZERO;
             
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM");
-            for (DailyRevenue dr : dailyData) {
+            if (dailyData.isEmpty()) {
+                // Show "no data" row for today if empty
                 revenueModel.addRow(new Object[]{
-                    dr.date().format(fmt),
-                    dr.orderCount(),
-                    formatCurrency(dr.grossRevenue()),
-                    formatCurrency(dr.discount()),
-                    formatCurrency(dr.netRevenue())
+                    toDate.format(fmt),
+                    "0",
+                    "0 ₫",
+                    "0 ₫",
+                    "0 ₫"
                 });
-                total = total.add(dr.netRevenue());
+            } else {
+                for (DailyRevenue dr : dailyData) {
+                    revenueModel.addRow(new Object[]{
+                        dr.date().format(fmt),
+                        dr.orderCount(),
+                        formatCurrency(dr.grossRevenue()),
+                        formatCurrency(dr.discount()),
+                        formatCurrency(dr.netRevenue())
+                    });
+                    total = total.add(dr.netRevenue());
+                }
             }
             totalRevenueLabel.setText(formatCurrency(total));
             
@@ -305,77 +306,38 @@ public class ReportsPanel extends JPanel {
             List<TopProduct> topProducts = reportService.getTopProducts(fromDate, toDate, 10);
             topProductsModel.setRowCount(0);
             
-            for (TopProduct tp : topProducts) {
-                String medal = switch (tp.rank()) {
-                    case 1 -> "🥇";
-                    case 2 -> "🥈";
-                    case 3 -> "🥉";
-                    default -> String.valueOf(tp.rank());
-                };
-                
+            if (topProducts.isEmpty()) {
                 topProductsModel.addRow(new Object[]{
-                    medal,
-                    tp.name(),
-                    tp.quantity(),
-                    formatCurrency(tp.revenue())
+                    "-", "Chưa có dữ liệu", "-", "-"
                 });
+            } else {
+                for (TopProduct tp : topProducts) {
+                    String medal = switch (tp.rank()) {
+                        case 1 -> "🥇";
+                        case 2 -> "🥈";
+                        case 3 -> "🥉";
+                        default -> String.valueOf(tp.rank());
+                    };
+                    
+                    topProductsModel.addRow(new Object[]{
+                        medal,
+                        tp.name(),
+                        tp.quantity(),
+                        formatCurrency(tp.revenue())
+                    });
+                }
             }
             
-            logger.info("Loaded real data: {} orders, {} revenue", summary.totalOrders(), summary.totalRevenue());
-            return true;
+            logger.info("Loaded real data: {} orders, {} revenue for {} to {}", 
+                summary.totalOrders(), summary.totalRevenue(), fromDate, toDate);
             
         } catch (Exception e) {
             logger.error("Error loading real data", e);
-            return false;
-        }
-    }
-    
-    private void loadDemoData() {
-        // Demo stats
-        statRevenueValue.setText("12,500,000 ₫");
-        statOrdersValue.setText("48");
-        statGuestsValue.setText("156");
-        statAvgValue.setText("260,000 ₫");
-        
-        // Demo revenue
-        revenueModel.setRowCount(0);
-        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM");
-        Random rand = new Random(42);
-        long total = 0;
-        
-        long daysToShow = java.time.temporal.ChronoUnit.DAYS.between(fromDate, toDate) + 1;
-        for (int i = (int)daysToShow - 1; i >= 0; i--) {
-            LocalDate date = LocalDate.now().minusDays(i);
-            int orders = 5 + rand.nextInt(10);
-            long revenue = (800000L + rand.nextInt(700000)) * orders / 7;
-            long discount = revenue * rand.nextInt(10) / 100;
-            long net = revenue - discount;
-            
-            revenueModel.addRow(new Object[]{
-                date.format(fmt),
-                orders,
-                String.format("%,d ₫", revenue),
-                String.format("%,d ₫", discount),
-                String.format("%,d ₫", net)
-            });
-            total += net;
-        }
-        totalRevenueLabel.setText(String.format("%,d ₫", total));
-        
-        // Demo top products
-        topProductsModel.setRowCount(0);
-        Object[][] data = {
-            {"🥇", "Phở bò tái", 45, "2,475,000 ₫"},
-            {"🥈", "Cơm chiên dương châu", 38, "2,470,000 ₫"},
-            {"🥉", "Cà phê sữa đá", 52, "1,508,000 ₫"},
-            {"4", "Bún bò Huế", 28, "1,680,000 ₫"},
-            {"5", "Sinh tố bơ", 25, "1,125,000 ₫"},
-            {"6", "Gỏi cuốn", 22, "770,000 ₫"},
-            {"7", "Trà đào", 20, "700,000 ₫"},
-            {"8", "Chả giò chiên", 18, "810,000 ₫"},
-        };
-        for (Object[] row : data) {
-            topProductsModel.addRow(row);
+            // Show error state, not demo data
+            statRevenueValue.setText("Lỗi");
+            statOrdersValue.setText("--");
+            statGuestsValue.setText("--");
+            statAvgValue.setText("--");
         }
     }
     

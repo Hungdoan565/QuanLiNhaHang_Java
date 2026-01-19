@@ -64,8 +64,7 @@ public class MainFrame extends JFrame {
     private JLabel clockLabel;
     private Timer clockTimer;
     private POSPanel posPanel;
-    
-    // Panel identifiers
+    private ReportsPanel reportsPanel;
     public static final String PANEL_DASHBOARD = "dashboard";
     public static final String PANEL_POS = "pos";
     public static final String PANEL_KITCHEN = "kitchen";
@@ -160,7 +159,8 @@ public class MainFrame extends JFrame {
         
         // Reports panel with error handling
         try {
-            contentPanel.add(new ReportsPanel(currentUser), PANEL_REPORTS);
+            reportsPanel = new ReportsPanel(currentUser);
+            contentPanel.add(reportsPanel, PANEL_REPORTS);
             logger.info("ReportsPanel initialized successfully");
         } catch (Exception e) {
             logger.error("Failed to initialize ReportsPanel", e);
@@ -324,6 +324,11 @@ public class MainFrame extends JFrame {
         // Refresh POS panel data when navigating to it
         if (PANEL_POS.equals(panelId) && posPanel != null) {
             posPanel.refresh();
+        }
+        
+        // Refresh Reports panel data when navigating to it
+        if (PANEL_REPORTS.equals(panelId) && reportsPanel != null) {
+            reportsPanel.refresh();
         }
         
         logger.debug("Navigated to: {}", panelId);
