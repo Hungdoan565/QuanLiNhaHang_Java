@@ -98,7 +98,16 @@ public class ReportsPanel extends JPanel {
         periodFilter.addActionListener(e -> loadReportData());
         header.add(periodFilter);
         
-        JButton exportBtn = createButton("📊 Xuất CSV", SUCCESS, this::exportReport);
+        // Export dropdown button
+        JButton exportBtn = new JButton("📥 Xuất báo cáo ▾");
+        exportBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 13));
+        exportBtn.setBackground(SUCCESS);
+        exportBtn.setForeground(Color.WHITE);
+        exportBtn.setBorderPainted(false);
+        exportBtn.setFocusPainted(false);
+        exportBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        exportBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        exportBtn.addActionListener(e -> showExportMenu(exportBtn));
         header.add(exportBtn);
         
         JButton refreshBtn = createButton("🔄", SURFACE, this::refresh);
@@ -106,6 +115,30 @@ public class ReportsPanel extends JPanel {
         header.add(refreshBtn);
         
         return header;
+    }
+    
+    private void showExportMenu(Component parent) {
+        JPopupMenu menu = new JPopupMenu();
+        menu.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        
+        JMenuItem csvItem = new JMenuItem("📄 Xuất CSV (.csv)");
+        csvItem.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 13));
+        csvItem.addActionListener(e -> exportToCSV());
+        menu.add(csvItem);
+        
+        JMenuItem excelItem = new JMenuItem("📊 Xuất Excel (.xlsx)");
+        excelItem.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 13));
+        excelItem.addActionListener(e -> exportToExcel());
+        menu.add(excelItem);
+        
+        menu.addSeparator();
+        
+        JMenuItem printItem = new JMenuItem("🖨️ In báo cáo");
+        printItem.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 13));
+        printItem.addActionListener(e -> printReport());
+        menu.add(printItem);
+        
+        menu.show(parent, 0, parent.getHeight());
     }
     
     private JPanel createRightPanel() {
@@ -393,11 +426,16 @@ public class ReportsPanel extends JPanel {
         return String.format("%,d ₫", amount.longValue());
     }
     
-    private void exportReport() {
+    private void exportToCSV() {
+        DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        String fromDateStr = fromDate.format(dateFmt);
+        String toDateStr = toDate.format(dateFmt);
+        
         JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setDialogTitle("Lưu báo cáo");
+        fileChooser.setDialogTitle("Xuất báo cáo CSV");
         fileChooser.setSelectedFile(new File("BaoCaoDoanhThu_" + 
-            LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd")) + ".csv"));
+            fromDate.format(DateTimeFormatter.ofPattern("ddMMyyyy")) + "_" +
+            toDate.format(DateTimeFormatter.ofPattern("ddMMyyyy")) + ".csv"));
         
         int result = fileChooser.showSaveDialog(SwingUtilities.getWindowAncestor(this));
         if (result == JFileChooser.APPROVE_OPTION) {
@@ -410,55 +448,75 @@ public class ReportsPanel extends JPanel {
             try (PrintWriter writer = new PrintWriter(new OutputStreamWriter(
                     new FileOutputStream(file), StandardCharsets.UTF_8))) {
                 
-                writer.print('\ufeff'); // BOM for Excel
-                writer.println("BÁO CÁO DOANH THU - RESTAURANT POS");
-                writer.println("Ngày xuất:," + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+                writer.print('\ufeff'); // BOM for Excel UTF-8
+                
+                // Header with clear formatting
+                writer.println("╔══════════════════════════════════════════════════════════════╗");
+                writer.println("║           BÁO CÁO DOANH THU - RESTAURANT POS                 ║");
+                writer.println("╚══════════════════════════════════════════════════════════════╝");
+                writer.println();
+                writer.println("Ngày xuất báo cáo:," + LocalDate.now().format(dateFmt));
                 writer.println("Kỳ báo cáo:," + periodFilter.getSelectedItem());
-                writer.println("Từ ngày:," + fromDate + ",Đến ngày:," + toDate);
+                writer.println("Từ ngày:," + fromDateStr);
+                writer.println("Đến ngày:," + toDateStr);
                 writer.println();
                 
-                // Stats
-                writer.println("THỐNG KÊ TỔNG QUAN");
-                writer.println("Tổng doanh thu:," + statRevenueValue.getText().replace(",", ""));
-                writer.println("Số đơn hàng:," + statOrdersValue.getText());
-                writer.println("Khách hàng:," + statGuestsValue.getText());
-                writer.println("TB/Đơn:," + statAvgValue.getText().replace(",", ""));
+                // Summary stats in clear table format
+                writer.println("═══════════════════════════════════════════════════════════════");
+                writer.println("                     THỐNG KÊ TỔNG QUAN                        ");
+                writer.println("═══════════════════════════════════════════════════════════════");
+                writer.println();
+                writer.println("Chỉ số,Giá trị");
+                writer.println("Tổng doanh thu," + cleanCurrency(statRevenueValue.getText()));
+                writer.println("Số đơn hàng," + statOrdersValue.getText());
+                writer.println("Số khách hàng," + statGuestsValue.getText());
+                writer.println("Trung bình/đơn," + cleanCurrency(statAvgValue.getText()));
                 writer.println();
                 
                 // Revenue table
-                writer.println("DOANH THU THEO NGÀY");
+                writer.println("═══════════════════════════════════════════════════════════════");
+                writer.println("                    DOANH THU THEO NGÀY                         ");
+                writer.println("═══════════════════════════════════════════════════════════════");
+                writer.println();
                 writer.println("Ngày,Số đơn,Doanh thu,Giảm giá,Thực thu");
                 for (int i = 0; i < revenueModel.getRowCount(); i++) {
-                    StringBuilder row = new StringBuilder();
-                    for (int j = 0; j < revenueModel.getColumnCount(); j++) {
-                        if (j > 0) row.append(",");
-                        String val = revenueModel.getValueAt(i, j).toString();
-                        row.append(val.replace(",", "").replace(" ₫", ""));
-                    }
-                    writer.println(row);
+                    String dateCol = revenueModel.getValueAt(i, 0).toString();
+                    // Convert dd/MM to dd/MM/yyyy
+                    String fullDate = dateCol + "/" + LocalDate.now().getYear();
+                    writer.println(fullDate + "," +
+                        revenueModel.getValueAt(i, 1) + "," +
+                        cleanCurrency(revenueModel.getValueAt(i, 2).toString()) + "," +
+                        cleanCurrency(revenueModel.getValueAt(i, 3).toString()) + "," +
+                        cleanCurrency(revenueModel.getValueAt(i, 4).toString()));
                 }
                 writer.println();
-                writer.println("Tổng cộng:," + totalRevenueLabel.getText().replace(",", "").replace(" ₫", ""));
+                writer.println("TỔNG CỘNG,," + cleanCurrency(totalRevenueLabel.getText()) + ",,");
                 writer.println();
                 
                 // Top products
-                writer.println("TOP MÓN BÁN CHẠY");
-                writer.println("#,Tên món,Số lượng,Doanh thu");
+                writer.println("═══════════════════════════════════════════════════════════════");
+                writer.println("                    TOP MÓN BÁN CHẠY                           ");
+                writer.println("═══════════════════════════════════════════════════════════════");
+                writer.println();
+                writer.println("Hạng,Tên món,Số lượng bán,Doanh thu");
                 for (int i = 0; i < topProductsModel.getRowCount(); i++) {
-                    StringBuilder row = new StringBuilder();
-                    for (int j = 0; j < topProductsModel.getColumnCount(); j++) {
-                        if (j > 0) row.append(",");
-                        String val = topProductsModel.getValueAt(i, j).toString();
-                        row.append(val.replace(",", "").replace(" ₫", ""));
-                    }
-                    writer.println(row);
+                    String rank = topProductsModel.getValueAt(i, 0).toString()
+                        .replace("🥇", "1").replace("🥈", "2").replace("🥉", "3");
+                    writer.println(rank + "," +
+                        "\"" + topProductsModel.getValueAt(i, 1) + "\"," +
+                        topProductsModel.getValueAt(i, 2) + "," +
+                        cleanCurrency(topProductsModel.getValueAt(i, 3).toString()));
                 }
+                writer.println();
+                writer.println("═══════════════════════════════════════════════════════════════");
+                writer.println("                          HẾT BÁO CÁO                           ");
+                writer.println("═══════════════════════════════════════════════════════════════");
                 
                 writer.flush();
-                logger.info("Report exported to: {}", file.getAbsolutePath());
+                logger.info("CSV report exported to: {}", file.getAbsolutePath());
                 
                 ToastNotification.success(SwingUtilities.getWindowAncestor(this), 
-                    "Đã xuất: " + file.getName());
+                    "✅ Đã xuất: " + file.getName());
                 
                 // Open folder
                 if (Desktop.isDesktopSupported()) {
@@ -466,10 +524,268 @@ public class ReportsPanel extends JPanel {
                 }
                 
             } catch (Exception e) {
-                logger.error("Export error", e);
-                ToastNotification.error(SwingUtilities.getWindowAncestor(this), "Lỗi: " + e.getMessage());
+                logger.error("CSV export error", e);
+                ToastNotification.error(SwingUtilities.getWindowAncestor(this), "Lỗi xuất CSV: " + e.getMessage());
             }
         }
+    }
+    
+    private void exportToExcel() {
+        DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Xuất báo cáo Excel");
+        fileChooser.setSelectedFile(new File("BaoCaoDoanhThu_" + 
+            fromDate.format(DateTimeFormatter.ofPattern("ddMMyyyy")) + ".xlsx"));
+        
+        int result = fileChooser.showSaveDialog(SwingUtilities.getWindowAncestor(this));
+        if (result == JFileChooser.APPROVE_OPTION) {
+            File file = fileChooser.getSelectedFile();
+            
+            if (!file.getName().toLowerCase().endsWith(".xlsx")) {
+                file = new File(file.getAbsolutePath() + ".xlsx");
+            }
+            
+            try (org.apache.poi.xssf.usermodel.XSSFWorkbook workbook = 
+                    new org.apache.poi.xssf.usermodel.XSSFWorkbook()) {
+                
+                org.apache.poi.xssf.usermodel.XSSFSheet sheet = 
+                    workbook.createSheet("Báo cáo doanh thu");
+                
+                // Create styles
+                org.apache.poi.xssf.usermodel.XSSFCellStyle titleStyle = workbook.createCellStyle();
+                org.apache.poi.xssf.usermodel.XSSFFont titleFont = workbook.createFont();
+                titleFont.setBold(true);
+                titleFont.setFontHeightInPoints((short) 18);
+                titleFont.setColor(new org.apache.poi.xssf.usermodel.XSSFColor(
+                    new byte[]{(byte)255, (byte)255, (byte)255}, null));
+                titleStyle.setFont(titleFont);
+                titleStyle.setFillForegroundColor(new org.apache.poi.xssf.usermodel.XSSFColor(
+                    new byte[]{(byte)40, (byte)167, (byte)69}, null)); // Green
+                titleStyle.setFillPattern(org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND);
+                titleStyle.setAlignment(org.apache.poi.ss.usermodel.HorizontalAlignment.CENTER);
+                
+                org.apache.poi.xssf.usermodel.XSSFCellStyle headerStyle = workbook.createCellStyle();
+                org.apache.poi.xssf.usermodel.XSSFFont headerFont = workbook.createFont();
+                headerFont.setBold(true);
+                headerFont.setFontHeightInPoints((short) 11);
+                headerFont.setColor(new org.apache.poi.xssf.usermodel.XSSFColor(
+                    new byte[]{(byte)255, (byte)255, (byte)255}, null));
+                headerStyle.setFont(headerFont);
+                headerStyle.setFillForegroundColor(new org.apache.poi.xssf.usermodel.XSSFColor(
+                    new byte[]{(byte)52, (byte)58, (byte)64}, null)); // Dark gray
+                headerStyle.setFillPattern(org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND);
+                headerStyle.setAlignment(org.apache.poi.ss.usermodel.HorizontalAlignment.CENTER);
+                headerStyle.setBorderBottom(org.apache.poi.ss.usermodel.BorderStyle.THIN);
+                headerStyle.setBorderTop(org.apache.poi.ss.usermodel.BorderStyle.THIN);
+                headerStyle.setBorderLeft(org.apache.poi.ss.usermodel.BorderStyle.THIN);
+                headerStyle.setBorderRight(org.apache.poi.ss.usermodel.BorderStyle.THIN);
+                
+                org.apache.poi.xssf.usermodel.XSSFCellStyle sectionStyle = workbook.createCellStyle();
+                org.apache.poi.xssf.usermodel.XSSFFont sectionFont = workbook.createFont();
+                sectionFont.setBold(true);
+                sectionFont.setFontHeightInPoints((short) 12);
+                sectionStyle.setFont(sectionFont);
+                sectionStyle.setFillForegroundColor(new org.apache.poi.xssf.usermodel.XSSFColor(
+                    new byte[]{(byte)230, (byte)230, (byte)230}, null)); // Light gray
+                sectionStyle.setFillPattern(org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND);
+                
+                org.apache.poi.xssf.usermodel.XSSFCellStyle dataStyle = workbook.createCellStyle();
+                dataStyle.setBorderBottom(org.apache.poi.ss.usermodel.BorderStyle.THIN);
+                dataStyle.setBorderTop(org.apache.poi.ss.usermodel.BorderStyle.THIN);
+                dataStyle.setBorderLeft(org.apache.poi.ss.usermodel.BorderStyle.THIN);
+                dataStyle.setBorderRight(org.apache.poi.ss.usermodel.BorderStyle.THIN);
+                
+                org.apache.poi.xssf.usermodel.XSSFCellStyle currencyStyle = workbook.createCellStyle();
+                currencyStyle.cloneStyleFrom(dataStyle);
+                currencyStyle.setDataFormat(workbook.createDataFormat().getFormat("#,##0"));
+                currencyStyle.setAlignment(org.apache.poi.ss.usermodel.HorizontalAlignment.RIGHT);
+                
+                org.apache.poi.xssf.usermodel.XSSFCellStyle totalStyle = workbook.createCellStyle();
+                org.apache.poi.xssf.usermodel.XSSFFont totalFont = workbook.createFont();
+                totalFont.setBold(true);
+                totalStyle.setFont(totalFont);
+                totalStyle.setFillForegroundColor(new org.apache.poi.xssf.usermodel.XSSFColor(
+                    new byte[]{(byte)255, (byte)243, (byte)205}, null)); // Light yellow
+                totalStyle.setFillPattern(org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND);
+                totalStyle.setBorderBottom(org.apache.poi.ss.usermodel.BorderStyle.DOUBLE);
+                
+                int rowNum = 0;
+                
+                // Title row (merged)
+                org.apache.poi.ss.usermodel.Row titleRow = sheet.createRow(rowNum++);
+                titleRow.setHeightInPoints(30);
+                org.apache.poi.ss.usermodel.Cell titleCell = titleRow.createCell(0);
+                titleCell.setCellValue("📊 BÁO CÁO DOANH THU - RESTAURANT POS");
+                titleCell.setCellStyle(titleStyle);
+                sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, 4));
+                
+                rowNum++; // Empty row
+                
+                // Info section
+                createInfoRow(sheet, rowNum++, "Ngày xuất:", LocalDate.now().format(dateFmt), sectionStyle, dataStyle);
+                createInfoRow(sheet, rowNum++, "Kỳ báo cáo:", (String)periodFilter.getSelectedItem(), sectionStyle, dataStyle);
+                createInfoRow(sheet, rowNum++, "Từ ngày:", fromDate.format(dateFmt), sectionStyle, dataStyle);
+                createInfoRow(sheet, rowNum++, "Đến ngày:", toDate.format(dateFmt), sectionStyle, dataStyle);
+                
+                rowNum++; // Empty row
+                
+                // Summary section
+                org.apache.poi.ss.usermodel.Row summaryHeader = sheet.createRow(rowNum++);
+                org.apache.poi.ss.usermodel.Cell summaryCell = summaryHeader.createCell(0);
+                summaryCell.setCellValue("📈 THỐNG KÊ TỔNG QUAN");
+                summaryCell.setCellStyle(sectionStyle);
+                sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(rowNum-1, rowNum-1, 0, 4));
+                
+                createSummaryRow(sheet, rowNum++, "Tổng doanh thu", cleanCurrency(statRevenueValue.getText()), headerStyle, currencyStyle);
+                createSummaryRow(sheet, rowNum++, "Số đơn hàng", statOrdersValue.getText(), headerStyle, dataStyle);
+                createSummaryRow(sheet, rowNum++, "Số khách", statGuestsValue.getText(), headerStyle, dataStyle);
+                createSummaryRow(sheet, rowNum++, "Trung bình/đơn", cleanCurrency(statAvgValue.getText()), headerStyle, currencyStyle);
+                
+                rowNum++; // Empty row
+                
+                // Revenue table header
+                org.apache.poi.ss.usermodel.Row revHeader = sheet.createRow(rowNum++);
+                org.apache.poi.ss.usermodel.Cell revCell = revHeader.createCell(0);
+                revCell.setCellValue("📅 DOANH THU THEO NGÀY");
+                revCell.setCellStyle(sectionStyle);
+                sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(rowNum-1, rowNum-1, 0, 4));
+                
+                org.apache.poi.ss.usermodel.Row revColHeader = sheet.createRow(rowNum++);
+                String[] revColumns = {"Ngày", "Số đơn", "Doanh thu", "Giảm giá", "Thực thu"};
+                for (int i = 0; i < revColumns.length; i++) {
+                    org.apache.poi.ss.usermodel.Cell cell = revColHeader.createCell(i);
+                    cell.setCellValue(revColumns[i]);
+                    cell.setCellStyle(headerStyle);
+                }
+                
+                // Revenue data
+                for (int i = 0; i < revenueModel.getRowCount(); i++) {
+                    org.apache.poi.ss.usermodel.Row row = sheet.createRow(rowNum++);
+                    row.createCell(0).setCellValue(revenueModel.getValueAt(i, 0) + "/" + LocalDate.now().getYear());
+                    row.getCell(0).setCellStyle(dataStyle);
+                    
+                    row.createCell(1).setCellValue(Integer.parseInt(revenueModel.getValueAt(i, 1).toString()));
+                    row.getCell(1).setCellStyle(dataStyle);
+                    
+                    for (int j = 2; j < 5; j++) {
+                        org.apache.poi.ss.usermodel.Cell cell = row.createCell(j);
+                        try {
+                            cell.setCellValue(Long.parseLong(cleanCurrency(revenueModel.getValueAt(i, j).toString())));
+                        } catch (NumberFormatException e) {
+                            cell.setCellValue(0);
+                        }
+                        cell.setCellStyle(currencyStyle);
+                    }
+                }
+                
+                // Total row
+                org.apache.poi.ss.usermodel.Row totalRow = sheet.createRow(rowNum++);
+                totalRow.createCell(0).setCellValue("TỔNG CỘNG");
+                totalRow.getCell(0).setCellStyle(totalStyle);
+                totalRow.createCell(4).setCellValue(Long.parseLong(cleanCurrency(totalRevenueLabel.getText())));
+                totalRow.getCell(4).setCellStyle(totalStyle);
+                
+                rowNum++; // Empty row
+                
+                // Top products
+                org.apache.poi.ss.usermodel.Row topHeader = sheet.createRow(rowNum++);
+                org.apache.poi.ss.usermodel.Cell topCell = topHeader.createCell(0);
+                topCell.setCellValue("🏆 TOP MÓN BÁN CHẠY");
+                topCell.setCellStyle(sectionStyle);
+                sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(rowNum-1, rowNum-1, 0, 3));
+                
+                org.apache.poi.ss.usermodel.Row topColHeader = sheet.createRow(rowNum++);
+                String[] topColumns = {"Hạng", "Tên món", "Số lượng", "Doanh thu"};
+                for (int i = 0; i < topColumns.length; i++) {
+                    org.apache.poi.ss.usermodel.Cell cell = topColHeader.createCell(i);
+                    cell.setCellValue(topColumns[i]);
+                    cell.setCellStyle(headerStyle);
+                }
+                
+                for (int i = 0; i < topProductsModel.getRowCount(); i++) {
+                    org.apache.poi.ss.usermodel.Row row = sheet.createRow(rowNum++);
+                    String rank = topProductsModel.getValueAt(i, 0).toString()
+                        .replace("🥇", "1").replace("🥈", "2").replace("🥉", "3");
+                    row.createCell(0).setCellValue(rank);
+                    row.getCell(0).setCellStyle(dataStyle);
+                    row.createCell(1).setCellValue(topProductsModel.getValueAt(i, 1).toString());
+                    row.getCell(1).setCellStyle(dataStyle);
+                    row.createCell(2).setCellValue(Integer.parseInt(topProductsModel.getValueAt(i, 2).toString()));
+                    row.getCell(2).setCellStyle(dataStyle);
+                    try {
+                        row.createCell(3).setCellValue(Long.parseLong(cleanCurrency(topProductsModel.getValueAt(i, 3).toString())));
+                    } catch (NumberFormatException e) {
+                        row.createCell(3).setCellValue(0);
+                    }
+                    row.getCell(3).setCellStyle(currencyStyle);
+                }
+                
+                // Auto-size columns
+                for (int i = 0; i < 5; i++) {
+                    sheet.autoSizeColumn(i);
+                    sheet.setColumnWidth(i, Math.min(sheet.getColumnWidth(i) + 512, 10000));
+                }
+                
+                // Write to file
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file)) {
+                    workbook.write(fos);
+                }
+                
+                logger.info("Excel report exported to: {}", file.getAbsolutePath());
+                
+                ToastNotification.success(SwingUtilities.getWindowAncestor(this), 
+                    "✅ Đã xuất Excel: " + file.getName());
+                
+                if (Desktop.isDesktopSupported()) {
+                    Desktop.getDesktop().open(file);
+                }
+                
+            } catch (Exception e) {
+                logger.error("Excel export error", e);
+                ToastNotification.error(SwingUtilities.getWindowAncestor(this), "Lỗi xuất Excel: " + e.getMessage());
+            }
+        }
+    }
+    
+    private void createInfoRow(org.apache.poi.xssf.usermodel.XSSFSheet sheet, int rowNum, 
+            String label, String value, 
+            org.apache.poi.xssf.usermodel.XSSFCellStyle labelStyle, 
+            org.apache.poi.xssf.usermodel.XSSFCellStyle valueStyle) {
+        org.apache.poi.ss.usermodel.Row row = sheet.createRow(rowNum);
+        org.apache.poi.ss.usermodel.Cell labelCell = row.createCell(0);
+        labelCell.setCellValue(label);
+        labelCell.setCellStyle(labelStyle);
+        org.apache.poi.ss.usermodel.Cell valueCell = row.createCell(1);
+        valueCell.setCellValue(value);
+        valueCell.setCellStyle(valueStyle);
+    }
+    
+    private void createSummaryRow(org.apache.poi.xssf.usermodel.XSSFSheet sheet, int rowNum,
+            String label, String value,
+            org.apache.poi.xssf.usermodel.XSSFCellStyle labelStyle,
+            org.apache.poi.xssf.usermodel.XSSFCellStyle valueStyle) {
+        org.apache.poi.ss.usermodel.Row row = sheet.createRow(rowNum);
+        org.apache.poi.ss.usermodel.Cell labelCell = row.createCell(0);
+        labelCell.setCellValue(label);
+        labelCell.setCellStyle(labelStyle);
+        org.apache.poi.ss.usermodel.Cell valueCell = row.createCell(1);
+        try {
+            valueCell.setCellValue(Long.parseLong(value));
+        } catch (NumberFormatException e) {
+            valueCell.setCellValue(value);
+        }
+        valueCell.setCellStyle(valueStyle);
+    }
+    
+    private void printReport() {
+        ToastNotification.info(SwingUtilities.getWindowAncestor(this), 
+            "🖨️ Chức năng in đang phát triển...");
+        // TODO: Implement print functionality using java.awt.print
+    }
+    
+    private String cleanCurrency(String value) {
+        return value.replace(",", "").replace(" ₫", "").replace("₫", "").trim();
     }
     
     private JButton createButton(String text, Color bgColor, Runnable action) {
