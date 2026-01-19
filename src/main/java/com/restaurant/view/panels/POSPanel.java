@@ -619,8 +619,18 @@ public class POSPanel extends JPanel {
         sendKitchenBtn.setVisible(false);
         orderRow.add(sendKitchenBtn, "grow");
         
-        payBtn = createActionBtn("💳 Thanh toán", SUCCESS);
-        payBtn.addActionListener(e -> processPayment());
+        // Payment button - disabled for WAITER role
+        if (currentUser.getRole() != null && currentUser.getRole().isWaiter()) {
+            payBtn = createActionBtn("📞 Gọi thu ngân", new Color(108, 117, 125));
+            payBtn.addActionListener(e -> {
+                ToastNotification.info(SwingUtilities.getWindowAncestor(this), 
+                    "Vui lòng gọi Thu ngân để thanh toán bàn " + (selectedTable != null ? selectedTable.getName() : ""));
+                Toolkit.getDefaultToolkit().beep();
+            });
+        } else {
+            payBtn = createActionBtn("💳 Thanh toán", SUCCESS);
+            payBtn.addActionListener(e -> processPayment());
+        }
         payBtn.setVisible(false);
         orderRow.add(payBtn, "grow");
         

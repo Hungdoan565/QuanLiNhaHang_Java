@@ -34,15 +34,20 @@ public class Role {
     // Role Constants
     // ===========================================
     public static final String ADMIN = "ADMIN";
+    public static final String MANAGER = "MANAGER";
     public static final String CASHIER = "CASHIER";
     public static final String WAITER = "WAITER";
     public static final String CHEF = "CHEF";
     
     // ===========================================
-    // Permission Checks
+    // Permission Checks - Based on Real Restaurant Workflow
     // ===========================================
     public boolean isAdmin() {
         return ADMIN.equalsIgnoreCase(this.name);
+    }
+    
+    public boolean isManager() {
+        return MANAGER.equalsIgnoreCase(this.name);
     }
     
     public boolean isCashier() {
@@ -57,35 +62,58 @@ public class Role {
         return CHEF.equalsIgnoreCase(this.name);
     }
     
+    // POS: Admin, Manager, Cashier, Waiter
     public boolean canAccessPOS() {
-        return isAdmin() || isCashier() || isWaiter();
+        return isAdmin() || isManager() || isCashier() || isWaiter();
     }
     
+    // Kitchen: Admin, Manager, Chef
     public boolean canAccessKitchen() {
-        return isAdmin() || isChef();
+        return isAdmin() || isManager() || isChef();
     }
     
+    // Dashboard: Admin, Manager, Cashier
+    public boolean canAccessDashboard() {
+        return isAdmin() || isManager() || isCashier();
+    }
+    
+    // Bill/Payment: Admin, Manager, Cashier (NOT Waiter)
     public boolean canBill() {
-        return isAdmin() || isCashier();
+        return isAdmin() || isManager() || isCashier();
     }
     
+    // Shift Management: Admin, Manager
     public boolean canManageShift() {
-        return isAdmin() || isCashier();
+        return isAdmin() || isManager();
     }
     
+    // Cancel Order: Admin, Manager
     public boolean canCancelOrder() {
-        return isAdmin();
+        return isAdmin() || isManager();
     }
     
+    // Reports: Admin, Manager
     public boolean canAccessReports() {
-        return isAdmin();
+        return isAdmin() || isManager();
     }
     
+    // Menu Management: Admin, Manager
+    public boolean canManageMenu() {
+        return isAdmin() || isManager();
+    }
+    
+    // Inventory: Admin, Manager
     public boolean canManageInventory() {
-        return isAdmin();
+        return isAdmin() || isManager();
     }
     
+    // Staff: Admin, Manager (limited), can view but Manager cannot delete
     public boolean canManageStaff() {
+        return isAdmin() || isManager();
+    }
+    
+    // Settings: Admin only
+    public boolean canAccessSettings() {
         return isAdmin();
     }
     

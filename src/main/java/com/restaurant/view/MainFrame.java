@@ -3,7 +3,9 @@ package com.restaurant.view;
 import com.formdev.flatlaf.FlatClientProperties;
 import com.restaurant.config.AppConfig;
 import com.restaurant.model.User;
+import com.restaurant.model.Notification;
 import com.restaurant.service.AuthService;
+import com.restaurant.service.NotificationService;
 import com.restaurant.util.ToastNotification;
 import com.restaurant.view.components.Sidebar;
 import com.restaurant.view.panels.DashboardPanel;
@@ -12,6 +14,8 @@ import com.restaurant.view.panels.KitchenPanel;
 import com.restaurant.view.panels.MenuPanel;
 import com.restaurant.view.panels.POSPanel;
 import com.restaurant.view.panels.ReportsPanel;
+import com.restaurant.view.panels.ScheduleManagementPanel;
+import com.restaurant.view.panels.MySchedulePanel;
 import com.restaurant.view.panels.SettingsPanel;
 import com.restaurant.view.panels.StaffPanel;
 import net.miginfocom.swing.MigLayout;
@@ -71,6 +75,8 @@ public class MainFrame extends JFrame {
     public static final String PANEL_MENU = "menu";
     public static final String PANEL_INVENTORY = "inventory";
     public static final String PANEL_STAFF = "staff";
+    public static final String PANEL_SCHEDULE = "schedule";
+    public static final String PANEL_MY_SCHEDULE = "my_schedule";
     public static final String PANEL_REPORTS = "reports";
     public static final String PANEL_SETTINGS = "settings";
     
@@ -156,6 +162,8 @@ public class MainFrame extends JFrame {
         contentPanel.add(new MenuPanel(currentUser), PANEL_MENU);
         contentPanel.add(new InventoryPanel(currentUser), PANEL_INVENTORY);
         contentPanel.add(new StaffPanel(currentUser), PANEL_STAFF);
+        contentPanel.add(new ScheduleManagementPanel(currentUser), PANEL_SCHEDULE);
+        contentPanel.add(new MySchedulePanel(currentUser), PANEL_MY_SCHEDULE);
         
         // Reports panel with error handling
         try {
@@ -184,9 +192,13 @@ public class MainFrame extends JFrame {
         headerTitle.setForeground(TEXT_PRIMARY);
         header.add(headerTitle, "grow");
         
-        // Right side: Clock + User info
-        JPanel rightPanel = new JPanel(new MigLayout("insets 0, gap 16", "[][]", "[]"));
+        // Right side: Notification + Clock + User info
+        JPanel rightPanel = new JPanel(new MigLayout("insets 0, gap 16", "[][][]", "[]"));
         rightPanel.setOpaque(false);
+        
+        // Notification bell
+        JPanel notifPanel = createNotificationBell();
+        rightPanel.add(notifPanel);
         
         // Clock
         clockLabel = new JLabel();
@@ -202,6 +214,109 @@ public class MainFrame extends JFrame {
         header.add(rightPanel);
         
         return header;
+    }
+    
+    private JPanel createNotificationBell() {
+        JPanel panel = new JPanel(new MigLayout("insets 0", "[]", "[]"));
+        panel.setOpaque(false);
+        
+        JButton bellBtn = new JButton("🔔");
+        bellBtn.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 18));
+        bellBtn.setContentAreaFilled(false);
+        bellBtn.setBorderPainted(false);
+        bellBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        bellBtn.setToolTipText("Thông báo");
+        
+        // Badge for unread count
+        JLabel badge = new JLabel();
+        badge.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 10));
+        badge.setForeground(Color.WHITE);
+        badge.setBackground(Color.decode("#E74C3C"));
+        badge.setOpaque(true);
+        badge.setHorizontalAlignment(SwingConstants.CENTER);
+        badge.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 4));
+        badge.setVisible(false);
+        
+        // Update badge count
+        updateNotificationBadge(badge);
+        
+        bellBtn.addActionListener(e -> showNotificationPopup(bellBtn, badge));
+        
+        panel.add(bellBtn);
+        panel.add(badge, "pos 16 0");
+        
+        // Refresh every 5 seconds for near-real-time notifications
+        Timer refreshTimer = new Timer(5000, e -> updateNotificationBadge(badge));
+        refreshTimer.start();
+        
+        return panel;
+    }
+    
+    private void updateNotificationBadge(JLabel badge) {
+        int count = NotificationService.getInstance().getUnreadCount(currentUser.getId());
+        if (count > 0) {
+            badge.setText(count > 9 ? "9+" : String.valueOf(count));
+            badge.setVisible(true);
+        } else {
+            badge.setVisible(false);
+        }
+    }
+    
+    private void showNotificationPopup(JButton bellBtn, JLabel badge) {
+        JPopupMenu popup = new JPopupMenu();
+        popup.setLayout(new MigLayout("wrap, insets 8", "[300!]", ""));
+        
+        JLabel title = new JLabel("🔔 Thông báo");
+        title.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 14));
+        popup.add(title);
+        popup.addSeparator();
+        
+        var notifications = NotificationService.getInstance().getUnreadNotifications(currentUser.getId());
+        
+        if (notifications.isEmpty()) {
+            JLabel empty = new JLabel("Không có thông báo mới");
+            empty.setForeground(TEXT_SECONDARY);
+            popup.add(empty);
+        } else {
+            for (Notification n : notifications) {
+                JPanel notifItem = new JPanel(new MigLayout("wrap, insets 8", "[grow]", ""));
+                notifItem.setBackground(Color.WHITE);
+                notifItem.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Color.decode(AppConfig.Colors.BORDER)));
+                notifItem.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                
+                JLabel itemTitle = new JLabel(n.getIcon() + " " + n.getTitle());
+                itemTitle.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 12));
+                notifItem.add(itemTitle);
+                
+                JLabel itemMsg = new JLabel("<html><body style='width:260px'>" + n.getMessage() + "</body></html>");
+                itemMsg.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 11));
+                itemMsg.setForeground(TEXT_SECONDARY);
+                notifItem.add(itemMsg);
+                
+                notifItem.addMouseListener(new MouseAdapter() {
+                    @Override
+                    public void mouseClicked(MouseEvent e) {
+                        NotificationService.getInstance().markAsRead(n.getId());
+                        popup.setVisible(false);
+                        updateNotificationBadge(badge);
+                    }
+                });
+                
+                popup.add(notifItem, "growx");
+            }
+            
+            // Mark all as read
+            JButton markAllBtn = new JButton("Đánh dấu tất cả đã đọc");
+            markAllBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 11));
+            markAllBtn.addActionListener(e -> {
+                NotificationService.getInstance().markAllAsRead(currentUser.getId());
+                updateNotificationBadge(badge);
+                popup.setVisible(false);
+            });
+            popup.add(markAllBtn, "center, gaptop 8");
+        }
+        
+        popup.show(bellBtn, 0, bellBtn.getHeight());
     }
     
     private JPanel createUserChip() {

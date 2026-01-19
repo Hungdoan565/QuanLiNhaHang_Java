@@ -2,6 +2,7 @@ package com.restaurant.view.components;
 
 import com.formdev.flatlaf.FlatClientProperties;
 import com.restaurant.config.AppConfig;
+import com.restaurant.model.Role;
 import com.restaurant.model.User;
 import com.restaurant.view.MainFrame;
 import net.miginfocom.swing.MigLayout;
@@ -108,45 +109,73 @@ public class Sidebar extends JPanel {
         menuContainer.removeAll();
         menuItems.clear();
         
-        // Dashboard - everyone can see
-        addMenuItem(MainFrame.PANEL_DASHBOARD, "dashboard", "Tổng quan", true);
+        Role role = currentUser.getRole();
+        if (role == null) {
+            return; // No role = no menu
+        }
         
-        // POS - Admin, Cashier, Waiter
-        if (currentUser.canAccessPOS()) {
+        // CHEF special case - Kitchen + My Schedule
+        if (role.isChef() && !role.isAdmin()) {
+            addMenuItem(MainFrame.PANEL_KITCHEN, "kitchen", "Màn hình bếp", true);
+            addMenuItem(MainFrame.PANEL_MY_SCHEDULE, "schedule", "Lịch của tôi", true);
+            menuContainer.revalidate();
+            menuContainer.repaint();
+            return;
+        }
+        
+        // Dashboard - Admin, Manager, Cashier
+        if (role.canAccessDashboard()) {
+            addMenuItem(MainFrame.PANEL_DASHBOARD, "dashboard", "Tổng quan", true);
+        }
+        
+        // POS - Admin, Manager, Cashier, Waiter
+        if (role.canAccessPOS()) {
             addMenuItem(MainFrame.PANEL_POS, "pos", "Bán hàng", true);
         }
         
-        // Kitchen - Admin, Chef
-        if (currentUser.canAccessKitchen() || currentUser.isAdmin()) {
+        // Kitchen - Admin, Manager, Chef
+        if (role.canAccessKitchen()) {
             addMenuItem(MainFrame.PANEL_KITCHEN, "kitchen", "Màn hình bếp", true);
         }
         
-        // Separator
-        menuContainer.add(Box.createVerticalStrut(8));
-        menuContainer.add(createSectionLabel("QUẢN LÝ"));
-        
-        // Menu Management - Admin only
-        if (currentUser.isAdmin()) {
-            addMenuItem(MainFrame.PANEL_MENU, "menu", "Thực đơn", true);
+        // My Schedule - For all staff (not admin/manager since they use ScheduleManagementPanel)
+        if (!role.isAdmin() && !role.isManager()) {
+            addMenuItem(MainFrame.PANEL_MY_SCHEDULE, "schedule", "Lịch của tôi", true);
         }
         
-        // Inventory - Admin only
-        if (currentUser.isAdmin()) {
-            addMenuItem(MainFrame.PANEL_INVENTORY, "inventory", "Kho hàng", true);
+        // QUẢN LÝ section - only show if has any management permission
+        if (role.canManageMenu() || role.canManageInventory() || role.canManageStaff() || role.canAccessReports()) {
+            menuContainer.add(Box.createVerticalStrut(8));
+            menuContainer.add(createSectionLabel("QUẢN LÝ"));
+            
+            // Menu Management - Admin, Manager
+            if (role.canManageMenu()) {
+                addMenuItem(MainFrame.PANEL_MENU, "menu", "Thực đơn", true);
+            }
+            
+            // Inventory - Admin, Manager
+            if (role.canManageInventory()) {
+                addMenuItem(MainFrame.PANEL_INVENTORY, "inventory", "Kho hàng", true);
+            }
+            
+            // Staff - Admin, Manager
+            if (role.canManageStaff()) {
+                addMenuItem(MainFrame.PANEL_STAFF, "staff", "Nhân viên", true);
+            }
+            
+            // Schedule - Admin, Manager
+            if (role.canManageStaff()) {
+                addMenuItem(MainFrame.PANEL_SCHEDULE, "schedule", "Lịch làm việc", true);
+            }
+            
+            // Reports - Admin, Manager
+            if (role.canAccessReports()) {
+                addMenuItem(MainFrame.PANEL_REPORTS, "reports", "Báo cáo", true);
+            }
         }
         
-        // Staff - Admin only
-        if (currentUser.isAdmin()) {
-            addMenuItem(MainFrame.PANEL_STAFF, "staff", "Nhân viên", true);
-        }
-        
-        // Reports - Admin, Cashier
-        if (currentUser.canAccessReports()) {
-            addMenuItem(MainFrame.PANEL_REPORTS, "reports", "Báo cáo", true);
-        }
-        
-        // Settings - Admin only
-        if (currentUser.isAdmin()) {
+        // HỆ THỐNG section - Admin only
+        if (role.canAccessSettings()) {
             menuContainer.add(Box.createVerticalStrut(8));
             menuContainer.add(createSectionLabel("HỆ THỐNG"));
             addMenuItem(MainFrame.PANEL_SETTINGS, "settings", "Cài đặt", true);
@@ -244,6 +273,17 @@ public class Sidebar extends JPanel {
                         g2d.fillRect(x + p + 5, y + h - p - 6, 3, 4);
                         g2d.fillRect(x + p + 9, y + h - p - 10, 3, 8);
                         g2d.fillRect(x + p + 13, y + h - p - 7, 3, 5);
+                    }
+                    case "schedule" -> {
+                        // Calendar icon
+                        g2d.drawRoundRect(x + p, y + p + 2, w - p * 2, h - p * 2 - 2, 3, 3);
+                        g2d.drawLine(x + p, y + p + 6, x + w - p, y + p + 6);
+                        g2d.drawLine(x + p + 4, y + p, x + p + 4, y + p + 4);
+                        g2d.drawLine(x + w - p - 4, y + p, x + w - p - 4, y + p + 4);
+                        // Calendar dots
+                        g2d.fillRect(x + p + 4, y + p + 9, 2, 2);
+                        g2d.fillRect(x + p + 8, y + p + 9, 2, 2);
+                        g2d.fillRect(x + p + 12, y + p + 9, 2, 2);
                     }
                     case "settings" -> {
                         // Gear/cog icon
