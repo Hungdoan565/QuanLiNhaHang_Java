@@ -157,7 +157,16 @@ public class MainFrame extends JFrame {
         contentPanel.add(new MenuPanel(currentUser), PANEL_MENU);
         contentPanel.add(new InventoryPanel(currentUser), PANEL_INVENTORY);
         contentPanel.add(new StaffPanel(currentUser), PANEL_STAFF);
-        contentPanel.add(new ReportsPanel(currentUser), PANEL_REPORTS);
+        
+        // Reports panel with error handling
+        try {
+            contentPanel.add(new ReportsPanel(currentUser), PANEL_REPORTS);
+            logger.info("ReportsPanel initialized successfully");
+        } catch (Exception e) {
+            logger.error("Failed to initialize ReportsPanel", e);
+            contentPanel.add(createPlaceholderPanel("📊", "Lỗi tải báo cáo", e.getMessage()), PANEL_REPORTS);
+        }
+        
         contentPanel.add(new SettingsPanel(currentUser), PANEL_SETTINGS);
         
         panel.add(contentPanel, BorderLayout.CENTER);

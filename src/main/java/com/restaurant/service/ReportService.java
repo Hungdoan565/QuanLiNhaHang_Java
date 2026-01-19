@@ -184,28 +184,75 @@ public class ReportService {
     
     // ========== Inner Classes ==========
     
-    public record DailyRevenue(
-        LocalDate date,
-        int orderCount,
-        BigDecimal grossRevenue,
-        BigDecimal discount,
-        BigDecimal netRevenue
-    ) {}
+    public static class DailyRevenue {
+        private final LocalDate date;
+        private final int orderCount;
+        private final BigDecimal grossRevenue;
+        private final BigDecimal discount;
+        private final BigDecimal netRevenue;
+        
+        public DailyRevenue(LocalDate date, int orderCount, BigDecimal grossRevenue, 
+                           BigDecimal discount, BigDecimal netRevenue) {
+            this.date = date;
+            this.orderCount = orderCount;
+            this.grossRevenue = grossRevenue;
+            this.discount = discount;
+            this.netRevenue = netRevenue;
+        }
+        
+        public LocalDate date() { return date; }
+        public int orderCount() { return orderCount; }
+        public BigDecimal grossRevenue() { return grossRevenue; }
+        public BigDecimal discount() { return discount; }
+        public BigDecimal netRevenue() { return netRevenue; }
+    }
     
-    public record TopProduct(
-        int rank,
-        int productId,
-        String name,
-        String categoryIcon,
-        int quantity,
-        BigDecimal revenue
-    ) {}
+    public static class TopProduct {
+        private final int rank;
+        private final int productId;
+        private final String name;
+        private final String categoryIcon;
+        private final int quantity;
+        private final BigDecimal revenue;
+        
+        public TopProduct(int rank, int productId, String name, String categoryIcon,
+                         int quantity, BigDecimal revenue) {
+            this.rank = rank;
+            this.productId = productId;
+            this.name = name;
+            this.categoryIcon = categoryIcon;
+            this.quantity = quantity;
+            this.revenue = revenue;
+        }
+        
+        public int rank() { return rank; }
+        public int productId() { return productId; }
+        public String name() { return name; }
+        public String categoryIcon() { return categoryIcon; }
+        public int quantity() { return quantity; }
+        public BigDecimal revenue() { return revenue; }
+    }
     
-    public record ReportSummary(
-        BigDecimal totalRevenue,
-        int totalOrders,
-        int totalGuests,
-        int tablesUsed,
-        BigDecimal avgPerOrder
-    ) {}
+    public static class ReportSummary {
+        private final BigDecimal totalRevenue;
+        private final int totalOrders;
+        private final int totalGuests;
+        private final int tablesUsed;
+        private final BigDecimal avgPerOrder;
+        
+        public ReportSummary(BigDecimal totalRevenue, int totalOrders, int totalGuests,
+                            int tablesUsed, BigDecimal avgPerOrder) {
+            this.totalRevenue = totalRevenue;
+            this.totalOrders = totalOrders;
+            this.totalGuests = totalGuests;
+            this.tablesUsed = tablesUsed;
+            this.avgPerOrder = avgPerOrder;
+        }
+        
+        public BigDecimal totalRevenue() { return totalRevenue; }
+        public int totalOrders() { return totalOrders; }
+        public int totalGuests() { return totalGuests; }
+        public int tablesUsed() { return tablesUsed; }
+        public BigDecimal avgPerOrder() { return avgPerOrder; }
+    }
 }

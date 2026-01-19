@@ -11,10 +11,11 @@ import com.restaurant.service.CategoryService;
 import com.restaurant.service.ProductService;
 import com.restaurant.service.TableService;
 import com.restaurant.model.Reservation;
+import com.restaurant.model.Order;
 import com.restaurant.service.ReservationService;
+import com.restaurant.service.OrderService;
 import com.restaurant.util.KitchenOrderManager;
 import com.restaurant.util.KitchenOrderManager.KitchenOrder;
-import com.restaurant.util.KitchenOrderManager.OrderItem;
 import com.restaurant.util.ToastNotification;
 import net.miginfocom.swing.MigLayout;
 import org.apache.logging.log4j.LogManager;
@@ -61,6 +62,7 @@ public class POSPanel extends JPanel {
     private final TableService tableService;
     private final CategoryService categoryService;
     private final ProductService productService;
+    private final OrderService orderService;
     private final NumberFormat currencyFormat;
     
     // Data
@@ -68,6 +70,9 @@ public class POSPanel extends JPanel {
     private final List<Category> categories = new ArrayList<>();
     private final List<Product> products = new ArrayList<>();
     private final List<OrderItem> orderItems = new ArrayList<>();
+    
+    // Current order from database
+    private Order currentOrder;
     
     // State
     private Table selectedTable;
@@ -104,6 +109,7 @@ public class POSPanel extends JPanel {
         this.tableService = TableService.getInstance();
         this.categoryService = CategoryService.getInstance();
         this.productService = ProductService.getInstance();
+        this.orderService = OrderService.getInstance();
         this.currencyFormat = NumberFormat.getCurrencyInstance(new Locale("vi", "VN"));
         
         initializeUI();
@@ -649,6 +655,9 @@ public class POSPanel extends JPanel {
         try {
             tables.addAll(tableService.getAllTables());
             
+            // Sync order status from database - CRITICAL for persistence
+            syncOrderStatus();
+            
             // Sync reservation status from database
             syncReservationStatus();
         } catch (Exception e) {
@@ -658,11 +667,41 @@ public class POSPanel extends JPanel {
     }
     
     /**
+     * Sync table status with open orders from database
+     * This ensures tables with active orders show OCCUPIED status
+     */
+    private void syncOrderStatus() {
+        try {
+            for (Table table : tables) {
+                java.util.Optional<Order> orderOpt = orderService.getOpenOrderForTable(table.getId());
+                
+                if (orderOpt.isPresent()) {
+                    Order order = orderOpt.get();
+                    // Has open order - set to OCCUPIED
+                    table.setStatus(TableStatus.OCCUPIED);
+                    table.setCurrentOrderCode(order.getOrderCode());
+                    table.setGuestCount(order.getGuestCount());
+                    table.setOccupiedSince(order.getCreatedAt());
+                    logger.debug("Table {} has open order {}, setting OCCUPIED", 
+                        table.getName(), order.getOrderCode());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error syncing order status", e);
+        }
+    }
+    
+    /**
      * Sync table status with active reservations from database
      */
     private void syncReservationStatus() {
         try {
             for (Table table : tables) {
+                // Skip if already OCCUPIED (order takes priority)
+                if (table.getStatus() == TableStatus.OCCUPIED) {
+                    continue;
+                }
+                
                 java.util.Optional<Reservation> resOpt = ReservationService.getInstance()
                     .getActiveForTable(table.getId());
                 
@@ -1006,6 +1045,37 @@ public class POSPanel extends JPanel {
         
         logger.info("Selected table: {}", table.getName());
         
+        // Load order from database if table has active order
+        if (table.hasActiveOrder()) {
+            orderService.getOpenOrderForTable(table.getId()).ifPresentOrElse(
+                order -> {
+                    currentOrder = order;
+                    // Sync orderItems from database
+                    orderItems.clear();
+                    for (var item : order.getItems()) {
+                        orderItems.add(new OrderItem(
+                            item.getId(),
+                            item.getProductId(), 
+                            item.getProductName(), 
+                            item.getQuantity(), 
+                            item.getUnitPrice(),
+                            item.getStatus()
+                        ));
+                    }
+                    logger.info("Loaded order {} with {} items from database", 
+                        order.getOrderCode(), order.getItems().size());
+                },
+                () -> {
+                    currentOrder = null;
+                    orderItems.clear();
+                    logger.debug("No open order found for table {}", table.getId());
+                }
+            );
+        } else {
+            currentOrder = null;
+            orderItems.clear();
+        }
+        
         updateOrderSection();
         updateButtonStates();
     }
@@ -1132,17 +1202,52 @@ public class POSPanel extends JPanel {
             return;
         }
         
-        // Check if product already in order
+        // Check if product already in order (in memory)
         for (OrderItem item : orderItems) {
             if (item.productId == product.getId()) {
                 item.quantity++;
+                
+                // Update in database if we have currentOrder
+                if (currentOrder != null) {
+                    for (var dbItem : currentOrder.getItems()) {
+                        if (dbItem.getProductId() == product.getId()) {
+                            orderService.updateItemQuantity(dbItem.getId(), item.quantity);
+                            break;
+                        }
+                    }
+                }
+                
                 refreshOrderItems();
                 return;
             }
         }
         
-        // Add new item
-        orderItems.add(new OrderItem(product.getId(), product.getName(), 1, product.getPrice()));
+        // Add new item - Save to database first to get ID
+        if (currentOrder != null) {
+            orderService.addItemToOrder(currentOrder.getId(), product, 1);
+            // Reload order to get updated items with IDs
+            orderService.getOrderById(currentOrder.getId()).ifPresent(o -> {
+                currentOrder = o;
+                // Sync orderItems from database to get proper IDs
+                orderItems.clear();
+                for (var item : o.getItems()) {
+                    orderItems.add(new OrderItem(
+                        item.getId(),
+                        item.getProductId(),
+                        item.getProductName(),
+                        item.getQuantity(),
+                        item.getUnitPrice(),
+                        item.getStatus()
+                    ));
+                }
+            });
+            logger.info("Added {} to order {} in database", product.getName(), currentOrder.getOrderCode());
+        } else {
+            // Fallback for memory-only mode (shouldn't happen normally)
+            orderItems.add(new OrderItem(0, product.getId(), product.getName(), 1, product.getPrice(), 
+                com.restaurant.model.OrderDetail.ItemStatus.PENDING));
+        }
+        
         refreshOrderItems();
         
         ToastNotification.success(SwingUtilities.getWindowAncestor(this), 
@@ -1171,7 +1276,7 @@ public class POSPanel extends JPanel {
     }
     
     private JPanel createOrderItemRow(OrderItem item) {
-        JPanel row = new JPanel(new MigLayout("insets 6 8, gap 6", "[][grow][][]", ""));
+        JPanel row = new JPanel(new MigLayout("insets 6 8, gap 6", "[][grow][][][]", ""));
         row.setBackground(BACKGROUND);
         row.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
         
@@ -1183,9 +1288,18 @@ public class POSPanel extends JPanel {
         minusBtn.setBorderPainted(false);
         minusBtn.setPreferredSize(new Dimension(28, 28));
         minusBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 6");
+        
+        // Disable quantity changes if already sent to kitchen
+        boolean canEdit = item.status == com.restaurant.model.OrderDetail.ItemStatus.PENDING;
+        minusBtn.setEnabled(canEdit);
+        
         minusBtn.addActionListener(e -> {
             if (item.quantity > 1) {
                 item.quantity--;
+                // Sync with database using item.id directly
+                if (item.id > 0) {
+                    orderService.updateItemQuantity(item.id, item.quantity);
+                }
                 refreshOrderItems();
             }
         });
@@ -1205,18 +1319,45 @@ public class POSPanel extends JPanel {
         plusBtn.setBorderPainted(false);
         plusBtn.setPreferredSize(new Dimension(28, 28));
         plusBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 6");
+        plusBtn.setEnabled(canEdit);
+        
         plusBtn.addActionListener(e -> {
             item.quantity++;
+            // Sync with database using item.id directly
+            if (item.id > 0) {
+                orderService.updateItemQuantity(item.id, item.quantity);
+            }
             refreshOrderItems();
         });
         row.add(plusBtn);
         
-        // Item name
-        String name = item.name.length() > 15 ? item.name.substring(0, 13) + "..." : item.name;
+        // Item name with status badge
+        String name = item.name.length() > 12 ? item.name.substring(0, 10) + "..." : item.name;
+        JPanel namePanel = new JPanel(new MigLayout("insets 0, gap 4", "[][]", ""));
+        namePanel.setOpaque(false);
+        
         JLabel nameLabel = new JLabel(name);
         nameLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 12));
         nameLabel.setForeground(TEXT_PRIMARY);
-        row.add(nameLabel, "grow");
+        namePanel.add(nameLabel);
+        
+        // Status badge
+        String statusIcon;
+        Color statusColor;
+        switch (item.status) {
+            case COOKING -> { statusIcon = "🔥"; statusColor = WARNING; }
+            case READY -> { statusIcon = "✅"; statusColor = SUCCESS; }
+            case SERVED -> { statusIcon = "🍽️"; statusColor = PRIMARY; }
+            default -> { statusIcon = "🕐"; statusColor = TEXT_SECONDARY; } // PENDING
+        }
+        
+        JLabel statusBadge = new JLabel(statusIcon);
+        statusBadge.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 11));
+        statusBadge.setForeground(statusColor);
+        statusBadge.setToolTipText(getStatusTooltip(item.status));
+        namePanel.add(statusBadge);
+        
+        row.add(namePanel, "grow");
         
         // Item total
         BigDecimal total = item.price.multiply(new BigDecimal(item.quantity));
@@ -1225,21 +1366,37 @@ public class POSPanel extends JPanel {
         priceLabel.setForeground(SUCCESS);
         row.add(priceLabel);
         
-        // Delete button
+        // Delete button (only if PENDING)
         JButton deleteBtn = new JButton("✕");
         deleteBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 10));
-        deleteBtn.setBackground(ERROR);
-        deleteBtn.setForeground(Color.WHITE);
+        deleteBtn.setBackground(canEdit ? ERROR : SURFACE);
+        deleteBtn.setForeground(canEdit ? Color.WHITE : TEXT_SECONDARY);
         deleteBtn.setBorderPainted(false);
         deleteBtn.setPreferredSize(new Dimension(24, 24));
         deleteBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 6");
+        deleteBtn.setEnabled(canEdit);
+        
         deleteBtn.addActionListener(e -> {
+            // Remove from database using item.id directly
+            if (item.id > 0) {
+                orderService.removeItemFromOrder(item.id);
+            }
             orderItems.remove(item);
             refreshOrderItems();
         });
         row.add(deleteBtn);
         
         return row;
+    }
+    
+    private String getStatusTooltip(com.restaurant.model.OrderDetail.ItemStatus status) {
+        return switch (status) {
+            case PENDING -> "Chờ gửi bếp";
+            case COOKING -> "Đang chế biến";
+            case READY -> "Sẵn sàng phục vụ";
+            case SERVED -> "Đã phục vụ";
+            case CANCELLED -> "Đã hủy";
+        };
     }
     
     private void updateSubtotal() {
@@ -1320,7 +1477,21 @@ public class POSPanel extends JPanel {
             selectedTable.setStatus(TableStatus.OCCUPIED);
             selectedTable.setGuestCount(selectedCount[0]);
             selectedTable.setOccupiedSince(LocalDateTime.now());
-            selectedTable.setCurrentOrderCode("ORD-" + String.format("%03d", (int)(Math.random() * 1000)));
+            
+            // Create order in database
+            Order newOrder = orderService.getOrCreateOrderForTable(
+                selectedTable.getId(), currentUser.getId());
+            
+            if (newOrder != null) {
+                currentOrder = newOrder;
+                newOrder.setGuestCount(selectedCount[0]);
+                orderService.updateOrder(newOrder);
+                selectedTable.setCurrentOrderCode(newOrder.getOrderCode());
+                logger.info("Created order {} for table {}", newOrder.getOrderCode(), selectedTable.getName());
+            } else {
+                selectedTable.setCurrentOrderCode("ORD-" + String.format("%03d", (int)(Math.random() * 1000)));
+                logger.warn("Failed to create order in DB, using memory-only");
+            }
             
             orderItems.clear();
             
@@ -1518,14 +1689,19 @@ public class POSPanel extends JPanel {
     }
     
     private void sendToKitchen() {
-        if (orderItems.isEmpty()) {
-            ToastNotification.warning(SwingUtilities.getWindowAncestor(this), "Chưa có món để gửi");
+        // Only send PENDING items
+        List<OrderItem> pendingItems = orderItems.stream()
+            .filter(item -> item.status == com.restaurant.model.OrderDetail.ItemStatus.PENDING)
+            .toList();
+        
+        if (pendingItems.isEmpty()) {
+            ToastNotification.warning(SwingUtilities.getWindowAncestor(this), "Không có món mới để gửi");
             return;
         }
         
         // Convert to kitchen order items
         List<KitchenOrderManager.OrderItem> kitchenItems = new ArrayList<>();
-        for (com.restaurant.view.panels.POSPanel.OrderItem item : orderItems) {
+        for (OrderItem item : pendingItems) {
             kitchenItems.add(new KitchenOrderManager.OrderItem(item.name, item.quantity));
         }
         
@@ -1543,12 +1719,34 @@ public class POSPanel extends JPanel {
         
         KitchenOrderManager.getInstance().addOrder(kitchenOrder);
         
-        ToastNotification.success(SwingUtilities.getWindowAncestor(this),
-            "Đã gửi " + orderItems.size() + " món xuống bếp!");
+        // Update item status in database to COOKING
+        int updatedCount = 0;
+        for (OrderItem item : pendingItems) {
+            if (item.id > 0) {
+                boolean updated = orderService.updateItemStatus(item.id, 
+                    com.restaurant.model.OrderDetail.ItemStatus.COOKING);
+                if (updated) {
+                    item.status = com.restaurant.model.OrderDetail.ItemStatus.COOKING;
+                    updatedCount++;
+                }
+            }
+        }
         
-        // Mark items as sent
-        sendKitchenBtn.setEnabled(false);
-        sendKitchenBtn.setText("✓ Đã gửi bếp");
+        logger.info("Sent {} items to kitchen, updated {} in database", pendingItems.size(), updatedCount);
+        
+        // Refresh UI to show updated status
+        refreshOrderItems();
+        
+        ToastNotification.success(SwingUtilities.getWindowAncestor(this),
+            "Đã gửi " + pendingItems.size() + " món xuống bếp!");
+        
+        // Check if all items are sent
+        boolean allSent = orderItems.stream()
+            .allMatch(item -> item.status != com.restaurant.model.OrderDetail.ItemStatus.PENDING);
+        if (allSent) {
+            sendKitchenBtn.setEnabled(false);
+            sendKitchenBtn.setText("✓ Đã gửi bếp");
+        }
     }
     
     private void processPayment() {
@@ -1922,6 +2120,18 @@ public class POSPanel extends JPanel {
     }
     
     private void completePayment() {
+        // Mark order as COMPLETED in database
+        if (currentOrder != null) {
+            boolean success = orderService.completeOrder(currentOrder.getId());
+            if (success) {
+                logger.info("Order {} completed successfully - Revenue: {}", 
+                    currentOrder.getOrderCode(), currentOrder.getTotalAmount());
+            } else {
+                logger.error("Failed to complete order {} in database", currentOrder.getOrderCode());
+            }
+            currentOrder = null;
+        }
+        
         selectedTable.setStatus(TableStatus.AVAILABLE);
         selectedTable.setGuestCount(0);
         selectedTable.setOccupiedSince(null);
@@ -1952,16 +2162,21 @@ public class POSPanel extends JPanel {
     
     // Order item helper class
     private static class OrderItem {
+        int id;  // OrderDetail ID from database
         int productId;
         String name;
         int quantity;
         BigDecimal price;
+        com.restaurant.model.OrderDetail.ItemStatus status;
         
-        OrderItem(int productId, String name, int quantity, BigDecimal price) {
+        OrderItem(int id, int productId, String name, int quantity, BigDecimal price, 
+                  com.restaurant.model.OrderDetail.ItemStatus status) {
+            this.id = id;
             this.productId = productId;
             this.name = name;
             this.quantity = quantity;
             this.price = price;
+            this.status = status != null ? status : com.restaurant.model.OrderDetail.ItemStatus.PENDING;
         }
     }
 }
