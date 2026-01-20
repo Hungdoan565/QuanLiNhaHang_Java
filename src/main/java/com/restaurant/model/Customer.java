@@ -10,23 +10,23 @@ import java.time.LocalDateTime;
 public class Customer {
     
     public enum CustomerTier {
-        REGULAR("Thường", 1, 0),
-        SILVER("Bạc", 2, 5),
-        GOLD("Vàng", 3, 5),
-        VIP("VIP", 5, 10);
+        REGULAR("Đồng", 1.0, 0),      // Hệ số x1.0
+        SILVER("Bạc", 1.1, 3),        // Hệ số x1.1, giảm 3%
+        GOLD("Vàng", 1.2, 5),          // Hệ số x1.2, giảm 5%
+        VIP("Kim Cương", 1.5, 10);     // Hệ số x1.5, giảm 10%
         
         private final String displayName;
-        private final int pointsPercent;  // % tích điểm
+        private final double pointsMultiplier;  // Hệ số nhân điểm
         private final int discountPercent; // % giảm giá
         
-        CustomerTier(String displayName, int pointsPercent, int discountPercent) {
+        CustomerTier(String displayName, double pointsMultiplier, int discountPercent) {
             this.displayName = displayName;
-            this.pointsPercent = pointsPercent;
+            this.pointsMultiplier = pointsMultiplier;
             this.discountPercent = discountPercent;
         }
         
         public String getDisplayName() { return displayName; }
-        public int getPointsPercent() { return pointsPercent; }
+        public double getPointsMultiplier() { return pointsMultiplier; }
         public int getDiscountPercent() { return discountPercent; }
     }
     
@@ -76,11 +76,14 @@ public class Customer {
     
     /**
      * Tính điểm thưởng từ số tiền
-     * 1 điểm = 10,000đ, nhân với % tier
+     * Công thức: (Tổng đơn / 10.000) * Hệ số Tier
+     * VD: Đơn 1.3 triệu, tier Gold (x1.2) = 130 * 1.2 = 156 điểm
      */
     public int calculatePointsFromAmount(BigDecimal amount) {
+        // Base points = amount / 10,000 (mỗi 10k = 1 điểm cơ bản)
         int basePoints = amount.divide(BigDecimal.valueOf(10000), 0, java.math.RoundingMode.DOWN).intValue();
-        return (basePoints * tier.getPointsPercent()) / 100 * 100; // Round to nearest 100
+        // Nhân với hệ số tier
+        return (int) Math.round(basePoints * tier.getPointsMultiplier());
     }
     
     /**

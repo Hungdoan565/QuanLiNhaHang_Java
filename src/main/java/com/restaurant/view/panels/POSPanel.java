@@ -11,6 +11,7 @@ import com.restaurant.service.CategoryService;
 import com.restaurant.service.ProductService;
 import com.restaurant.service.TableService;
 import com.restaurant.model.Reservation;
+import com.restaurant.model.Reservation.Status;
 import com.restaurant.model.Order;
 import com.restaurant.service.ReservationService;
 import com.restaurant.service.OrderService;
@@ -1900,6 +1901,17 @@ public class POSPanel extends JPanel {
         totalValue.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 18));
         totalValue.setForeground(SUCCESS);
         
+        // Original price (strikethrough) label
+        JLabel originalLabel = new JLabel("Giá gốc:");
+        originalLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 12));
+        originalLabel.setForeground(TEXT_SECONDARY);
+        originalLabel.setVisible(false);
+        
+        JLabel originalValue = new JLabel();
+        originalValue.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 12));
+        originalValue.setForeground(TEXT_SECONDARY);
+        originalValue.setVisible(false);
+        
         // ========== CUSTOMER LOOKUP SECTION ==========
         JPanel customerSection = new JPanel(new MigLayout("wrap, insets 12", "[grow]", ""));
         customerSection.setBackground(new Color(PRIMARY.getRed(), PRIMARY.getGreen(), PRIMARY.getBlue(), 20));
@@ -1956,6 +1968,40 @@ public class POSPanel extends JPanel {
         final int[] pointsToRedeem = {0};
         final BigDecimal[] discountFromPoints = {BigDecimal.ZERO};
         final BigDecimal[] tierDiscount = {BigDecimal.ZERO};
+        final com.restaurant.model.Promotion[] appliedPromotion = {null};
+        final BigDecimal[] couponDiscount = {BigDecimal.ZERO};
+        
+        // Labels for dynamic amount display (will be added to panels later)
+        JLabel qrAmountLabel = new JLabel();
+        qrAmountLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 18));
+        qrAmountLabel.setForeground(SUCCESS);
+        
+        JLabel cardAmountLabel = new JLabel();
+        cardAmountLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 20));
+        cardAmountLabel.setForeground(SUCCESS);
+        
+        java.util.function.Supplier<BigDecimal> calculateFinalAmount = () -> {
+            BigDecimal finalAmount = total
+                .subtract(couponDiscount[0])
+                .subtract(discountFromPoints[0])
+                .subtract(tierDiscount[0]);
+            return finalAmount.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : finalAmount;
+        };
+        
+        Runnable updateTotals = () -> {
+            BigDecimal finalAmount = calculateFinalAmount.get();
+            totalValue.setText(currencyFormat.format(finalAmount));
+            qrAmountLabel.setText("Số tiền: " + currencyFormat.format(finalAmount));
+            cardAmountLabel.setText("Số tiền: " + currencyFormat.format(finalAmount));
+            boolean hasDiscount = couponDiscount[0].compareTo(BigDecimal.ZERO) > 0
+                || discountFromPoints[0].compareTo(BigDecimal.ZERO) > 0
+                || tierDiscount[0].compareTo(BigDecimal.ZERO) > 0;
+            originalLabel.setVisible(hasDiscount);
+            originalValue.setVisible(hasDiscount);
+            if (hasDiscount) {
+                originalValue.setText("<html><strike>" + currencyFormat.format(total) + "</strike></html>");
+            }
+        };
         
         // Search customer action
         searchCustBtn.addActionListener(e -> {
@@ -1963,6 +2009,8 @@ public class POSPanel extends JPanel {
             if (phone.isEmpty()) {
                 custInfoPanel.setVisible(false);
                 selectedCustomer[0] = null;
+                tierDiscount[0] = BigDecimal.ZERO;
+                updateTotals.run();
                 return;
             }
             
@@ -1977,6 +2025,7 @@ public class POSPanel extends JPanel {
                 
                 tierDiscount[0] = cust.calculateTierDiscount(total);
                 custInfoPanel.setVisible(true);
+                updateTotals.run();
             } else {
                 // Customer not found - offer to create new
                 int choice = JOptionPane.showConfirmDialog(dialog,
@@ -2002,15 +2051,20 @@ public class POSPanel extends JPanel {
                                 currencyFormat.format(createdCust.getLoyaltyPoints() * 100) + ")");
                             tierDiscount[0] = createdCust.calculateTierDiscount(total);
                             custInfoPanel.setVisible(true);
+                            updateTotals.run();
                             com.restaurant.util.ToastNotification.success(dialog, "Đã tạo thành viên mới: " + inputName.trim());
                         }
                     } else {
                         custInfoPanel.setVisible(false);
                         selectedCustomer[0] = null;
+                        tierDiscount[0] = BigDecimal.ZERO;
+                        updateTotals.run();
                     }
                 } else {
                     custInfoPanel.setVisible(false);
                     selectedCustomer[0] = null;
+                    tierDiscount[0] = BigDecimal.ZERO;
+                    updateTotals.run();
                 }
             }
         });
@@ -2030,10 +2084,12 @@ public class POSPanel extends JPanel {
                         discountFromPoints[0] = BigDecimal.ZERO;
                         redeemValue.setText("= 0 ₫ (không đủ điểm)");
                     }
+                    updateTotals.run();
                 } catch (NumberFormatException ex) {
                     pointsToRedeem[0] = 0;
                     discountFromPoints[0] = BigDecimal.ZERO;
                     redeemValue.setText("= 0 ₫");
+                    updateTotals.run();
                 }
             }
         });
@@ -2083,10 +2139,6 @@ public class POSPanel extends JPanel {
         
         couponSection.add(appliedPanel, "growx");
         
-        // Coupon state
-        final com.restaurant.model.Promotion[] appliedPromotion = {null};
-        final BigDecimal[] couponDiscount = {BigDecimal.ZERO};
-        
         // Apply coupon action
         applyCouponBtn.addActionListener(e -> {
             String code = couponField.getText().trim().toUpperCase();
@@ -2109,8 +2161,7 @@ public class POSPanel extends JPanel {
                 applyCouponBtn.setEnabled(false);
                 
                 // Update total display
-                BigDecimal newTotal = total.subtract(couponDiscount[0]);
-                totalValue.setText(currencyFormat.format(newTotal));
+                updateTotals.run();
                 
                 com.restaurant.util.ToastNotification.success(dialog, "Đã áp dụng mã " + code + "!");
             } else {
@@ -2126,7 +2177,7 @@ public class POSPanel extends JPanel {
             couponField.setEnabled(true);
             couponField.setText("");
             applyCouponBtn.setEnabled(true);
-            totalValue.setText(currencyFormat.format(total));
+            updateTotals.run();
         });
         
         // Show auto-apply suggestions
@@ -2157,13 +2208,15 @@ public class POSPanel extends JPanel {
         summary.add(new JLabel(currencyFormat.format(subtotal)));
         summary.add(new JLabel("VAT (8%):"));
         summary.add(new JLabel(currencyFormat.format(vat)));
+        summary.add(originalLabel);
+        summary.add(originalValue);
         summary.add(new JSeparator(), "span, growx, gaptop 8, gapbottom 8");
         
         JLabel totalLabel = new JLabel("TỔNG:");
         totalLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 16));
         summary.add(totalLabel);
-        totalValue.setText(currencyFormat.format(total));
         summary.add(totalValue);
+        updateTotals.run();
         
         content.add(summary, "growx, gaptop 12");
         
@@ -2207,14 +2260,11 @@ public class POSPanel extends JPanel {
         JPanel quickAmounts = new JPanel(new MigLayout("insets 0, gap 8", "[grow][grow][grow][grow]", ""));
         quickAmounts.setOpaque(false);
         
-        long totalLong = total.longValue();
-        long roundedUp = ((totalLong / 10000) + 1) * 10000;
-        
-        long[] quickValues = {100000, 200000, 500000, roundedUp};
-        String[] quickLabels = {"100k", "200k", "500k", currencyFormat.format(roundedUp)};
-        
-        final BigDecimal finalTotal = total;
         JLabel changeValue = new JLabel("0 ₫");
+        
+        // Quick buttons - use dynamic calculation
+        String[] quickLabels = {"100k", "200k", "500k", "Đủ tiền"};
+        long[] quickBaseValues = {100000, 200000, 500000, 0}; // 0 = calculate dynamically
         
         for (int i = 0; i < quickLabels.length; i++) {
             int idx = i;
@@ -2226,8 +2276,16 @@ public class POSPanel extends JPanel {
             qBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             qBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
             qBtn.addActionListener(e -> {
-                cashInput.setText(formatWithCommas(quickValues[idx]));
-                updateChange(quickValues[idx], finalTotal, changeValue);
+                BigDecimal currentFinal = calculateFinalAmount.get();
+                long value;
+                if (idx == 3) { // "Đủ tiền" button
+                    long totalLong = currentFinal.longValue();
+                    value = ((totalLong / 10000) + 1) * 10000;
+                } else {
+                    value = quickBaseValues[idx];
+                }
+                cashInput.setText(formatWithCommas(value));
+                updateChange(value, currentFinal, changeValue);
             });
             quickAmounts.add(qBtn, "grow, h 40!");
         }
@@ -2256,7 +2314,7 @@ public class POSPanel extends JPanel {
                         long value = Long.parseLong(text);
                         cashInput.setText(formatWithCommas(value));
                         cashInput.setCaretPosition(cashInput.getText().length());
-                        updateChange(value, finalTotal, changeValue);
+                        updateChange(value, calculateFinalAmount.get(), changeValue);
                     } else {
                         changeValue.setText("0 ₫");
                     }
@@ -2282,7 +2340,8 @@ public class POSPanel extends JPanel {
         String bankId = "970436";
         String accountNo = "1029849106";
         String accountName = "DOAN VINH HUNG";
-        long amount = total.longValue();
+        BigDecimal initialAmount = calculateFinalAmount.get();
+        long amount = initialAmount.longValue();
         String description = selectedTable.getName().replace(" ", "") + "_" + System.currentTimeMillis() % 10000;
         String vietQRUrl = String.format(
             "https://img.vietqr.io/image/%s-%s-compact2.png?amount=%d&addInfo=%s&accountName=%s",
@@ -2309,10 +2368,8 @@ public class POSPanel extends JPanel {
         bankInfo.setForeground(PRIMARY);
         qrPanel.add(bankInfo, "center, gaptop 12");
         
-        JLabel amountInfo = new JLabel("Số tiền: " + currencyFormat.format(total));
-        amountInfo.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 18));
-        amountInfo.setForeground(SUCCESS);
-        qrPanel.add(amountInfo, "center, gaptop 4");
+        // Use the pre-created dynamic label
+        qrPanel.add(qrAmountLabel, "center, gaptop 4");
         
         paymentPanelsContainer.add(qrPanel, "TRANSFER");
         
@@ -2330,10 +2387,8 @@ public class POSPanel extends JPanel {
         cardText.setForeground(TEXT_PRIMARY);
         cardPanel.add(cardText, "center, gaptop 12");
         
-        JLabel cardAmount = new JLabel("Số tiền: " + currencyFormat.format(total));
-        cardAmount.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 20));
-        cardAmount.setForeground(SUCCESS);
-        cardPanel.add(cardAmount, "center, gaptop 8");
+        // Use the pre-created dynamic label
+        cardPanel.add(cardAmountLabel, "center, gaptop 8");
         
         paymentPanelsContainer.add(cardPanel, "CARD");
         
@@ -2555,7 +2610,7 @@ public class POSPanel extends JPanel {
         // Complete any active reservation for this table
         ReservationService.getInstance().getActiveForTable(selectedTable.getId())
             .ifPresent(res -> {
-                ReservationService.getInstance().updateStatus(res.getId(), com.restaurant.model.Reservation.Status.COMPLETED);
+                ReservationService.getInstance().updateStatus(res.getId(), Status.COMPLETED);
                 logger.info("Marked reservation {} as COMPLETED after payment", res.getId());
             });
         

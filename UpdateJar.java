@@ -14,13 +14,39 @@ public class UpdateJar {
             "target\\classes\\com\\restaurant\\view\\dialogs\\SplitBillDialog.class",
             "target\\classes\\com\\restaurant\\view\\dialogs\\MultiQRDialog.class",
             "target\\classes\\com\\restaurant\\view\\dialogs\\TransferQRDialog.class",
-            "target\\classes\\com\\restaurant\\util\\QRCodeGenerator.class"
+            "target\\classes\\com\\restaurant\\util\\QRCodeGenerator.class",
+            "target\\classes\\com\\restaurant\\model\\Customer.class",
+            "target\\classes\\com\\restaurant\\model\\Customer$CustomerTier.class",
+            "target\\classes\\com\\restaurant\\model\\Customer$Gender.class",
+            "target\\classes\\com\\restaurant\\model\\Reservation.class",
+            "target\\classes\\com\\restaurant\\model\\Reservation$Status.class",
+            "target\\classes\\com\\restaurant\\view\\panels\\POSPanel.class",
+            "target\\classes\\com\\restaurant\\view\\panels\\POSPanel$1.class",
+            "target\\classes\\com\\restaurant\\view\\panels\\POSPanel$2.class",
+            "target\\classes\\com\\restaurant\\view\\panels\\POSPanel$3.class",
+            "target\\classes\\com\\restaurant\\view\\panels\\POSPanel$4.class",
+            "target\\classes\\com\\restaurant\\view\\panels\\POSPanel$5.class",
+            "target\\classes\\com\\restaurant\\view\\panels\\POSPanel$6.class",
+            "target\\classes\\com\\restaurant\\view\\panels\\POSPanel$OrderItem.class"
         };
         String[] entryNames = {
             "com/restaurant/view/dialogs/SplitBillDialog.class",
             "com/restaurant/view/dialogs/MultiQRDialog.class",
             "com/restaurant/view/dialogs/TransferQRDialog.class",
-            "com/restaurant/util/QRCodeGenerator.class"
+            "com/restaurant/util/QRCodeGenerator.class",
+            "com/restaurant/model/Customer.class",
+            "com/restaurant/model/Customer$CustomerTier.class",
+            "com/restaurant/model/Customer$Gender.class",
+            "com/restaurant/model/Reservation.class",
+            "com/restaurant/model/Reservation$Status.class",
+            "com/restaurant/view/panels/POSPanel.class",
+            "com/restaurant/view/panels/POSPanel$1.class",
+            "com/restaurant/view/panels/POSPanel$2.class",
+            "com/restaurant/view/panels/POSPanel$3.class",
+            "com/restaurant/view/panels/POSPanel$4.class",
+            "com/restaurant/view/panels/POSPanel$5.class",
+            "com/restaurant/view/panels/POSPanel$6.class",
+            "com/restaurant/view/panels/POSPanel$OrderItem.class"
         };
         
         File tempJar = new File(jarFile + ".tmp");
