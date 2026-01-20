@@ -1,19 +1,25 @@
 package com.restaurant.util;
 
+import com.restaurant.config.DatabaseConnection;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
  * Shared state manager for Kitchen Orders
- * Allows POS to push orders and Kitchen to listen for updates
- * 
- * TODO: Replace with proper database + WebSocket in production
+ * Loads orders from database for real-time sync across multiple instances
  */
 public class KitchenOrderManager {
     
+    private static final Logger logger = LogManager.getLogger(KitchenOrderManager.class);
     private static KitchenOrderManager instance;
     
     private final List<KitchenOrder> pendingOrders = new CopyOnWriteArrayList<>();
@@ -28,6 +34,86 @@ public class KitchenOrderManager {
             instance = new KitchenOrderManager();
         }
         return instance;
+    }
+    
+    /**
+     * Load orders from database - call this to sync with real data
+     * Loads OPEN orders with items that are PENDING, COOKING, or READY
+     */
+    public void loadFromDatabase() {
+        // Use IFNULL for current_step in case column doesn't exist or is null
+        String sql = """
+            SELECT 
+                o.id AS order_id, o.order_code, t.name AS table_name, o.created_at,
+                od.id AS item_id, od.product_id, p.name AS product_name, 
+                od.quantity, od.status AS item_status
+            FROM orders o
+            JOIN tables t ON o.table_id = t.id
+            JOIN order_details od ON o.id = od.order_id
+            JOIN products p ON od.product_id = p.id
+            WHERE o.status = 'OPEN' 
+              AND od.status IN ('PENDING', 'COOKING', 'READY')
+            ORDER BY o.created_at, od.id
+            """;
+        
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            
+            Map<Integer, KitchenOrder> orderMap = new HashMap<>();
+            
+            while (rs.next()) {
+                int orderId = rs.getInt("order_id");
+                
+                // Create or get order
+                KitchenOrder order = orderMap.get(orderId);
+                if (order == null) {
+                    String orderCode = rs.getString("order_code");
+                    String tableName = rs.getString("table_name");
+                    LocalDateTime createdAt = rs.getTimestamp("created_at").toLocalDateTime();
+                    order = new KitchenOrder(orderId, orderCode, tableName, createdAt);
+                    orderMap.put(orderId, order);
+                }
+                
+                // Add item
+                int itemId = rs.getInt("item_id");
+                String itemName = rs.getString("product_name");
+                int quantity = rs.getInt("quantity");
+                int productId = rs.getInt("product_id");
+                String itemStatus = rs.getString("item_status");
+                
+                OrderItem item = new OrderItem(itemId, itemName, quantity, productId);
+                item.setReady("READY".equals(itemStatus));
+                
+                // Set current step based on status
+                if ("COOKING".equals(itemStatus)) {
+                    item.setCurrentStep(1);
+                } else if ("READY".equals(itemStatus)) {
+                    item.setCurrentStep(3); // Completed
+                }
+                
+                order.getItems().add(item);
+                
+                // Set order status based on items
+                if ("COOKING".equals(itemStatus)) {
+                    order.setStatus(OrderStatus.PREPARING);
+                } else if ("READY".equals(itemStatus) && order.getStatus() != OrderStatus.PREPARING) {
+                    if (order.getItems().stream().allMatch(OrderItem::isReady)) {
+                        order.setStatus(OrderStatus.READY);
+                    }
+                }
+            }
+            
+            // Update pending orders
+            pendingOrders.clear();
+            pendingOrders.addAll(orderMap.values());
+            
+            logger.info("Kitchen: Loaded {} orders from database", orderMap.size());
+            notifyListeners();
+            
+        } catch (SQLException e) {
+            logger.error("Error loading orders from database: {}", e.getMessage(), e);
+        }
     }
     
     /**
@@ -170,12 +256,23 @@ public class KitchenOrderManager {
         private final List<OrderItem> items;
         private OrderStatus status;
         
+        // Constructor for POS (new order)
         public KitchenOrder(String orderCode, String tableName, List<OrderItem> items) {
             this.id = idCounter++;
             this.orderCode = orderCode;
             this.tableName = tableName;
             this.createdAt = LocalDateTime.now();
             this.items = new ArrayList<>(items);
+            this.status = OrderStatus.WAITING;
+        }
+        
+        // Constructor for database loading
+        public KitchenOrder(int id, String orderCode, String tableName, LocalDateTime createdAt) {
+            this.id = id;
+            this.orderCode = orderCode;
+            this.tableName = tableName;
+            this.createdAt = createdAt;
+            this.items = new ArrayList<>();
             this.status = OrderStatus.WAITING;
         }
         
@@ -223,20 +320,46 @@ public class KitchenOrderManager {
     }
     
     public static class OrderItem {
+        private int orderDetailId; // For DB updates
         private final String name;
         private final int quantity;
+        private final int productId; // For recipe lookup
         private boolean ready;
+        private int currentStep; // Current cooking step (0 = not started)
         
         public OrderItem(String name, int quantity) {
-            this.name = name;
-            this.quantity = quantity;
-            this.ready = false;
+            this(0, name, quantity, 0); // Default orderDetailId = 0, productId = 0
         }
         
+        public OrderItem(String name, int quantity, int productId) {
+            this(0, name, quantity, productId);
+        }
+        
+        public OrderItem(int orderDetailId, String name, int quantity, int productId) {
+            this.orderDetailId = orderDetailId;
+            this.name = name;
+            this.quantity = quantity;
+            this.productId = productId;
+            this.ready = false;
+            this.currentStep = 0;
+        }
+        
+        public int getOrderDetailId() { return orderDetailId; }
+        public void setOrderDetailId(int orderDetailId) { this.orderDetailId = orderDetailId; }
         public String getName() { return name; }
         public int getQuantity() { return quantity; }
+        public int getProductId() { return productId; }
         public boolean isReady() { return ready; }
         public void setReady(boolean ready) { this.ready = ready; }
+        public int getCurrentStep() { return currentStep; }
+        public void setCurrentStep(int currentStep) { this.currentStep = currentStep; }
+        
+        /**
+         * Advance to next cooking step
+         */
+        public void advanceStep() {
+            this.currentStep++;
+        }
     }
     
     public enum OrderStatus {

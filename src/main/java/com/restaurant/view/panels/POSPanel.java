@@ -1794,6 +1794,11 @@ public class POSPanel extends JPanel {
         header.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 20));
         content.add(header, "center");
         
+        // Create total value label early for use in listeners
+        JLabel totalValue = new JLabel(currencyFormat.format(total));
+        totalValue.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 18));
+        totalValue.setForeground(SUCCESS);
+        
         // ========== CUSTOMER LOOKUP SECTION ==========
         JPanel customerSection = new JPanel(new MigLayout("wrap, insets 12", "[grow]", ""));
         customerSection.setBackground(new Color(PRIMARY.getRed(), PRIMARY.getGreen(), PRIMARY.getBlue(), 20));
@@ -2025,9 +2030,7 @@ public class POSPanel extends JPanel {
         JLabel totalLabel = new JLabel("TỔNG:");
         totalLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 16));
         summary.add(totalLabel);
-        JLabel totalValue = new JLabel(currencyFormat.format(total));
-        totalValue.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 18));
-        totalValue.setForeground(SUCCESS);
+        totalValue.setText(currencyFormat.format(total));
         summary.add(totalValue);
         
         content.add(summary, "growx, gaptop 12");

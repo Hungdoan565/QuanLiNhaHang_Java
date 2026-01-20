@@ -172,11 +172,18 @@ public class PromotionPanel extends JPanel {
         List<Promotion> promotions = promotionService.getAllPromotions();
         
         for (Promotion p : promotions) {
-            String valueText = switch (p.getType()) {
-                case PERCENT -> p.getValue().intValue() + "%";
-                case FIXED -> currencyFormat.format(p.getValue());
-                default -> p.getValue().toString();
-            };
+            String valueText;
+            switch (p.getType()) {
+                case PERCENT:
+                    valueText = p.getValue().intValue() + "%";
+                    break;
+                case FIXED:
+                    valueText = currencyFormat.format(p.getValue());
+                    break;
+                default:
+                    valueText = p.getValue().toString();
+                    break;
+            }
             
             String timeText = p.getStartDate().format(dtFormatter) + " - " + p.getEndDate().format(dtFormatter);
             
@@ -361,11 +368,18 @@ public class PromotionPanel extends JPanel {
             setOpaque(true);
             setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 11));
             
-            Color bgColor = switch (status) {
-                case "Đang áp dụng" -> SUCCESS;
-                case "Chưa bắt đầu" -> WARNING;
-                default -> ERROR;
-            };
+            Color bgColor;
+            switch (status) {
+                case "Đang áp dụng":
+                    bgColor = PromotionPanel.SUCCESS;
+                    break;
+                case "Chưa bắt đầu":
+                    bgColor = PromotionPanel.WARNING;
+                    break;
+                default:
+                    bgColor = PromotionPanel.ERROR;
+                    break;
+            }
             
             setBackground(isSelected ? table.getSelectionBackground() : bgColor);
             setForeground(Color.WHITE);

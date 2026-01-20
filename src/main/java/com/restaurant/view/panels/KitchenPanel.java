@@ -2,11 +2,16 @@ package com.restaurant.view.panels;
 
 import com.formdev.flatlaf.FlatClientProperties;
 import com.restaurant.config.AppConfig;
+import com.restaurant.dao.impl.OrderDAOImpl;
+import com.restaurant.dao.interfaces.IOrderDAO;
+import com.restaurant.model.OrderDetail.ItemStatus;
 import com.restaurant.model.User;
 import com.restaurant.util.KitchenOrderManager;
 import com.restaurant.util.KitchenOrderManager.KitchenOrder;
+import com.restaurant.util.KitchenOrderManager.OrderItem;
 import com.restaurant.util.KitchenOrderManager.OrderStatus;
 import com.restaurant.util.ToastNotification;
+import com.restaurant.view.dialogs.CookingGameDialog;
 import net.miginfocom.swing.MigLayout;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -48,15 +53,16 @@ public class KitchenPanel extends JPanel {
     private static final Color COL_READY = Color.decode("#22C55E");     // Green
     private static final Color STATUS_URGENT = Color.decode("#EF4444"); // Red
     
-    // Fonts
-    private static final Font FONT_TITLE = new Font("Segoe UI", Font.BOLD, 28);
-    private static final Font FONT_HEADER = new Font("Segoe UI", Font.BOLD, 16);
-    private static final Font FONT_CARD_TITLE = new Font("Segoe UI", Font.BOLD, 18);
-    private static final Font FONT_BODY = new Font("Segoe UI", Font.PLAIN, 14);
-    private static final Font FONT_TIMER = new Font("Segoe UI", Font.BOLD, 24);
+    // Fonts - Compact for better density
+    private static final Font FONT_TITLE = new Font("Segoe UI", Font.BOLD, 20);
+    private static final Font FONT_HEADER = new Font("Segoe UI", Font.BOLD, 13);
+    private static final Font FONT_CARD_TITLE = new Font("Segoe UI", Font.BOLD, 14);
+    private static final Font FONT_BODY = new Font("Segoe UI", Font.PLAIN, 12);
+    private static final Font FONT_TIMER = new Font("Segoe UI", Font.BOLD, 16);
     
     private final User currentUser;
     private final KitchenOrderManager orderManager;
+    private final IOrderDAO orderDAO = new OrderDAOImpl();
     private List<KitchenOrder> orders = new ArrayList<>();
     
     // UI Components
@@ -78,7 +84,10 @@ public class KitchenPanel extends JPanel {
         this.orderManager = KitchenOrderManager.getInstance();
         initializeUI();
         setupOrderListener();
-        loadOrders();
+        // Initial load from database
+        orderManager.loadFromDatabase();
+        orders = orderManager.getPendingOrders();
+        refreshColumns();
         startAutoRefresh();
     }
     
@@ -89,26 +98,20 @@ public class KitchenPanel extends JPanel {
         // Header bar
         add(createHeaderBar(), BorderLayout.NORTH);
         
-        // Main content - 3 Kanban columns
+        // Main content - 3 Kanban columns (each column has its own scroll)
         JPanel columnsPanel = createKanbanColumns();
-        JScrollPane scrollPane = new JScrollPane(columnsPanel);
-        scrollPane.setBorder(null);
-        scrollPane.setOpaque(false);
-        scrollPane.getViewport().setOpaque(false);
-        scrollPane.getViewport().setBackground(BACKGROUND);
-        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(20);
-        add(scrollPane, BorderLayout.CENTER);
+        columnsPanel.setBackground(BACKGROUND);
+        add(columnsPanel, BorderLayout.CENTER);
     }
     
     private JPanel createHeaderBar() {
-        JPanel header = new JPanel(new MigLayout("insets 16 24, fill", "[][grow][][]", "[center]"));
+        JPanel header = new JPanel(new MigLayout("insets 8 16, fill", "[][grow][][]", "[center]"));
         header.setBackground(SURFACE);
         header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(255,255,255,20)));
         
         // Title with icon
         JLabel titleIcon = new JLabel("🍳");
-        titleIcon.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 32));
+        titleIcon.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 24));
         header.add(titleIcon);
         
         JLabel title = new JLabel("Màn Hình Bếp");
@@ -160,7 +163,7 @@ public class KitchenPanel extends JPanel {
     }
     
     private JPanel createKanbanColumns() {
-        JPanel panel = new JPanel(new MigLayout("fill, insets 16, gap 16", "[grow,33%][grow,33%][grow,33%]", "[grow]"));
+        JPanel panel = new JPanel(new MigLayout("fill, insets 8, gap 8", "[grow,33%][grow,33%][grow,33%]", "[grow]"));
         panel.setOpaque(false);
         
         // Column 1: CHỜ LÀM (Waiting)
@@ -185,10 +188,10 @@ public class KitchenPanel extends JPanel {
         JPanel column = new JPanel(new MigLayout("fill, wrap, insets 0, gap 0", "[grow]", "[][grow]"));
         column.setOpaque(false);
         
-        // Column header
-        JPanel header = new JPanel(new MigLayout("insets 12 16", "[]push[]", "[center]"));
+        // Column header - compact
+        JPanel header = new JPanel(new MigLayout("insets 8 12", "[]push[]", "[center]"));
         header.setBackground(headerColor);
-        header.putClientProperty(FlatClientProperties.STYLE, "arc: 12 12 0 0");
+        header.putClientProperty(FlatClientProperties.STYLE, "arc: 8 8 0 0");
         
         JLabel titleLabel = new JLabel(title);
         titleLabel.setFont(FONT_HEADER);
@@ -201,10 +204,10 @@ public class KitchenPanel extends JPanel {
         countLabel.setName("countLabel");
         header.add(countLabel);
         
-        column.add(header, "growx, h 48!");
+        column.add(header, "growx, h 36!");
         
-        // Cards container
-        JPanel cardsContainer = new JPanel(new MigLayout("wrap, insets 8, gap 8", "[grow]", ""));
+        // Cards container - compact spacing
+        JPanel cardsContainer = new JPanel(new MigLayout("wrap, insets 4, gap 4", "[grow]", ""));
         cardsContainer.setBackground(SURFACE);
         
         JScrollPane scroll = new JScrollPane(cardsContainer);
@@ -240,6 +243,40 @@ public class KitchenPanel extends JPanel {
     }
     
     private void refreshColumns() {
+        // Safely get scroll positions (may be null on first call)
+        int waitingScrollPos = 0, cookingScrollPos = 0, readyScrollPos = 0;
+        JScrollPane waitingScroll = null, cookingScroll = null, readyScroll = null;
+        
+        try {
+            if (waitingColumn != null && waitingColumn.getParent() != null) {
+                Container parent = waitingColumn.getParent().getParent();
+                if (parent instanceof JScrollPane sp) {
+                    waitingScroll = sp;
+                    waitingScrollPos = sp.getVerticalScrollBar().getValue();
+                }
+            }
+            if (cookingColumn != null && cookingColumn.getParent() != null) {
+                Container parent = cookingColumn.getParent().getParent();
+                if (parent instanceof JScrollPane sp) {
+                    cookingScroll = sp;
+                    cookingScrollPos = sp.getVerticalScrollBar().getValue();
+                }
+            }
+            if (readyColumn != null && readyColumn.getParent() != null) {
+                Container parent = readyColumn.getParent().getParent();
+                if (parent instanceof JScrollPane sp) {
+                    readyScroll = sp;
+                    readyScrollPos = sp.getVerticalScrollBar().getValue();
+                }
+            }
+        } catch (Exception e) {
+            // Ignore - first call before UI fully initialized
+        }
+        
+        if (waitingColumn == null || cookingColumn == null || readyColumn == null) {
+            return; // UI not ready yet
+        }
+        
         waitingColumn.removeAll();
         cookingColumn.removeAll();
         readyColumn.removeAll();
@@ -252,28 +289,40 @@ public class KitchenPanel extends JPanel {
         int orderCount = 0;
         
         // Sort orders by time (oldest first)
-        orders.sort((a, b) -> a.getCreatedAt().compareTo(b.getCreatedAt()));
-        
-        for (KitchenOrder order : orders) {
-            totalTime += order.getMinutesElapsed();
-            orderCount++;
+        if (orders != null && !orders.isEmpty()) {
+            System.out.println("DEBUG: Processing " + orders.size() + " orders");
+            orders.sort((a, b) -> a.getCreatedAt().compareTo(b.getCreatedAt()));
             
-            JPanel card = createOrderCard(order);
-            
-            switch (order.getStatus()) {
-                case WAITING -> {
-                    waitingColumn.add(card, "growx");
-                    waitingCount++;
-                }
-                case PREPARING -> {
-                    cookingColumn.add(card, "growx");
-                    cookingCount++;
-                }
-                case READY -> {
-                    readyColumn.add(card, "growx");
-                    readyCount++;
+            for (KitchenOrder order : orders) {
+                totalTime += order.getMinutesElapsed();
+                orderCount++;
+                
+                JPanel card = createOrderCard(order);
+                System.out.println("DEBUG: Order " + order.getOrderCode() + " status=" + order.getStatus() + 
+                    " card=" + (card != null ? "created" : "NULL"));
+                
+                switch (order.getStatus()) {
+                    case WAITING -> {
+                        waitingColumn.add(card, "growx");
+                        waitingCount++;
+                        System.out.println("DEBUG: Added to WAITING column");
+                    }
+                    case PREPARING -> {
+                        cookingColumn.add(card, "growx");
+                        cookingCount++;
+                        System.out.println("DEBUG: Added to COOKING column");
+                    }
+                    case READY -> {
+                        readyColumn.add(card, "growx");
+                        readyCount++;
+                        System.out.println("DEBUG: Added to READY column");
+                    }
                 }
             }
+            System.out.println("DEBUG: Final counts - waiting=" + waitingCount + 
+                " cooking=" + cookingCount + " ready=" + readyCount);
+        } else {
+            System.out.println("DEBUG: Orders list is null or empty!");
         }
         
         // Add empty state if no cards
@@ -281,15 +330,23 @@ public class KitchenPanel extends JPanel {
         if (cookingCount == 0) addEmptyState(cookingColumn, "Không có đơn đang nấu");
         if (readyCount == 0) addEmptyState(readyColumn, "Không có đơn sẵn sàng");
         
-        // Update column counts
-        updateColumnCount(waitingColumn.getParent().getParent(), waitingCount);
-        updateColumnCount(cookingColumn.getParent().getParent(), cookingCount);
-        updateColumnCount(readyColumn.getParent().getParent(), readyCount);
+        // Update column counts safely
+        try {
+            updateColumnCount(waitingColumn.getParent().getParent(), waitingCount);
+            updateColumnCount(cookingColumn.getParent().getParent(), cookingCount);
+            updateColumnCount(readyColumn.getParent().getParent(), readyCount);
+        } catch (Exception e) {
+            // Ignore if parent not ready
+        }
         
         // Update header stats
         int total = waitingCount + cookingCount + readyCount;
-        statsLabel.setText(total + " đơn đang xử lý");
-        avgTimeLabel.setText("~ " + (orderCount > 0 ? (totalTime / orderCount) : 0) + " phút/đơn");
+        if (statsLabel != null) {
+            statsLabel.setText(total + " đơn đang xử lý");
+        }
+        if (avgTimeLabel != null) {
+            avgTimeLabel.setText("~ " + (orderCount > 0 ? (totalTime / orderCount) : 0) + " phút/đơn");
+        }
         
         waitingColumn.revalidate();
         waitingColumn.repaint();
@@ -297,6 +354,20 @@ public class KitchenPanel extends JPanel {
         cookingColumn.repaint();
         readyColumn.revalidate();
         readyColumn.repaint();
+        
+        // Restore scroll positions after repaint
+        final JScrollPane ws = waitingScroll;
+        final JScrollPane cs = cookingScroll;
+        final JScrollPane rs = readyScroll;
+        final int wsp = waitingScrollPos;
+        final int csp = cookingScrollPos;
+        final int rsp = readyScrollPos;
+        
+        SwingUtilities.invokeLater(() -> {
+            if (ws != null) ws.getVerticalScrollBar().setValue(wsp);
+            if (cs != null) cs.getVerticalScrollBar().setValue(csp);
+            if (rs != null) rs.getVerticalScrollBar().setValue(rsp);
+        });
     }
     
     private void updateColumnCount(Container column, int count) {
@@ -334,8 +405,9 @@ public class KitchenPanel extends JPanel {
         long minutes = order.getMinutesElapsed();
         boolean isUrgent = minutes > 15;
         Color accentColor = isUrgent ? STATUS_URGENT : getStatusColor(order.getStatus());
+        boolean isViewOnly = !currentUser.getRole().isChef(); // Admin/Manager can view but not act
         
-        JPanel card = new JPanel(new MigLayout("wrap, insets 12, gap 6", "[grow]", "")) {
+        JPanel card = new JPanel(new MigLayout("wrap, insets 8, gap 4", "[grow]", "")) {
             @Override
             protected void paintComponent(Graphics g) {
                 Graphics2D g2d = (Graphics2D) g.create();
@@ -343,17 +415,17 @@ public class KitchenPanel extends JPanel {
                 
                 // Background
                 g2d.setColor(CARD_BG);
-                g2d.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
+                g2d.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
                 
                 // Left accent bar
                 g2d.setColor(accentColor);
-                g2d.fillRoundRect(0, 0, 5, getHeight(), 12, 12);
-                g2d.fillRect(3, 0, 2, getHeight());
+                g2d.fillRoundRect(0, 0, 4, getHeight(), 8, 8);
+                g2d.fillRect(2, 0, 2, getHeight());
                 
                 // Urgent glow effect
                 if (isUrgent) {
                     g2d.setColor(new Color(239, 68, 68, 30));
-                    g2d.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
+                    g2d.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
                 }
                 
                 g2d.dispose();
@@ -388,29 +460,58 @@ public class KitchenPanel extends JPanel {
         // Divider
         JSeparator sep = new JSeparator();
         sep.setForeground(new Color(255,255,255,30));
-        card.add(sep, "growx, gaptop 4, gapbottom 4");
+        card.add(sep, "growx, gaptop 2, gapbottom 2");
         
         // Items list with checkboxes
-        JPanel itemsPanel = new JPanel(new MigLayout("wrap, insets 0, gap 4", "[grow]", ""));
+        JPanel itemsPanel = new JPanel(new MigLayout("wrap, insets 0, gap 2", "[grow]", ""));
         itemsPanel.setOpaque(false);
         
-        for (String itemStr : order.getItemStrings()) {
-            boolean isDone = itemStr.startsWith("✓");
-            String displayText = isDone ? itemStr.substring(1).trim() : itemStr;
+        // Track checkboxes for item completion
+        List<JCheckBox> itemCheckboxes = new ArrayList<>();
+        List<KitchenOrderManager.OrderItem> orderItems = order.getItems();
+        
+        for (int i = 0; i < orderItems.size(); i++) {
+            KitchenOrderManager.OrderItem item = orderItems.get(i);
+            boolean isDone = item.isReady();
+            String displayText = item.getQuantity() + "x " + item.getName();
             
-            JPanel itemRow = new JPanel(new MigLayout("insets 0, gap 8", "[][grow]", ""));
+            JPanel itemRow = new JPanel(new MigLayout("insets 0, gap 4", "[][grow]", ""));
             itemRow.setOpaque(false);
             
             JCheckBox check = new JCheckBox();
             check.setSelected(isDone);
             check.setOpaque(false);
             check.setFocusPainted(false);
-            check.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            check.setEnabled(!isViewOnly); // Disable for view-only mode
+            check.setCursor(isViewOnly ? Cursor.getDefaultCursor() : Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            
+            final int itemIndex = i;
+            final KitchenOrderManager.OrderItem currentItem = item;
             check.addActionListener(e -> {
-                // Toggle item status
-                // In real implementation, this would update the item in the database
-                logger.debug("Item toggled: {}", displayText);
+                // Mark item as ready/not ready (in memory)
+                currentItem.setReady(check.isSelected());
+                logger.debug("Item {} toggled: {}", currentItem.getName(), check.isSelected());
+                
+                // Persist to database
+                ItemStatus newStatus = check.isSelected() ? ItemStatus.READY : ItemStatus.COOKING;
+                if (currentItem.getOrderDetailId() > 0) {
+                    orderDAO.updateOrderDetailStatus(currentItem.getOrderDetailId(), newStatus);
+                    logger.debug("Updated DB: order_detail {} -> {}", currentItem.getOrderDetailId(), newStatus);
+                }
+                
+                // Check if all items are now ready -> auto-transition to READY
+                if (order.getStatus() == OrderStatus.PREPARING && 
+                    orderItems.stream().allMatch(KitchenOrderManager.OrderItem::isReady)) {
+                    order.setStatus(OrderStatus.READY);
+                    refreshColumns();
+                    ToastNotification.success(SwingUtilities.getWindowAncestor(this), 
+                        "Tất cả món đã xong: " + order.getTableName());
+                    Toolkit.getDefaultToolkit().beep();
+                } else {
+                    refreshColumns();
+                }
             });
+            itemCheckboxes.add(check);
             itemRow.add(check);
             
             JLabel itemLabel = new JLabel(displayText);
@@ -419,6 +520,22 @@ public class KitchenPanel extends JPanel {
             if (isDone) {
                 itemLabel.setText("<html><s>" + displayText + "</s></html>");
             }
+            
+            // Click to open cooking game
+            if (!isViewOnly && !isDone) {
+                itemLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                itemLabel.setToolTipText("🎮 Click để mở game nấu ăn");
+                final OrderItem clickedItem = item;
+                itemLabel.addMouseListener(new java.awt.event.MouseAdapter() {
+                    @Override
+                    public void mouseClicked(java.awt.event.MouseEvent e) {
+                        CookingGameDialog.showDialog(
+                            KitchenPanel.this, order, clickedItem, isViewOnly, 
+                            () -> refreshColumns()
+                        );
+                    }
+                });
+            }
             itemRow.add(itemLabel, "growx");
             
             itemsPanel.add(itemRow, "growx");
@@ -426,60 +543,75 @@ public class KitchenPanel extends JPanel {
         
         card.add(itemsPanel, "growx");
         
-        // Action buttons based on status
-        JPanel actionsPanel = new JPanel(new MigLayout("insets 0, gap 8", "[grow][grow]", ""));
-        actionsPanel.setOpaque(false);
-        
-        if (order.getStatus() == OrderStatus.WAITING) {
-            JButton startBtn = createActionButton("🔥 Bắt đầu nấu", COL_COOKING);
-            startBtn.addActionListener(e -> {
-                order.setStatus(OrderStatus.PREPARING);
-                refreshColumns();
-                ToastNotification.info(SwingUtilities.getWindowAncestor(this), 
-                    "Bắt đầu nấu: " + order.getTableName());
-            });
-            actionsPanel.add(startBtn, "grow, span 2, h 40!");
-        } else if (order.getStatus() == OrderStatus.PREPARING) {
-            JButton doneBtn = createActionButton("✅ Hoàn thành", COL_READY);
-            doneBtn.addActionListener(e -> {
-                order.setStatus(OrderStatus.READY);
-                refreshColumns();
-                ToastNotification.success(SwingUtilities.getWindowAncestor(this), 
-                    "Sẵn sàng: " + order.getTableName());
-                Toolkit.getDefaultToolkit().beep(); // Alert waiter
-            });
-            actionsPanel.add(doneBtn, "grow, span 2, h 40!");
-        } else if (order.getStatus() == OrderStatus.READY) {
-            JButton ringBtn = createActionButton("🔔 Gọi phục vụ", COL_READY);
-            ringBtn.addActionListener(e -> {
-                Toolkit.getDefaultToolkit().beep();
-                ToastNotification.info(SwingUtilities.getWindowAncestor(this), 
-                    "Đã gọi phục vụ: " + order.getTableName());
-            });
-            actionsPanel.add(ringBtn, "grow, h 40!");
+        // Action buttons based on status - only show for Chef
+        if (!isViewOnly) {
+            JPanel actionsPanel = new JPanel(new MigLayout("insets 0, gap 4", "[grow][grow]", ""));
+            actionsPanel.setOpaque(false);
             
-            JButton clearBtn = createActionButton("✓ Đã lấy", CARD_BG);
-            clearBtn.addActionListener(e -> {
-                orderManager.completeOrder(order.getId());
-                refreshColumns();
-            });
-            actionsPanel.add(clearBtn, "grow, h 40!");
+            if (order.getStatus() == OrderStatus.WAITING) {
+                JButton startBtn = createActionButton("🔥 Bắt đầu", COL_COOKING);
+                startBtn.addActionListener(e -> {
+                    // Mark all items as COOKING in DB
+                    for (OrderItem item : orderItems) {
+                        if (item.getOrderDetailId() > 0) {
+                            orderDAO.updateOrderDetailStatus(item.getOrderDetailId(), ItemStatus.COOKING);
+                        }
+                    }
+                    order.setStatus(OrderStatus.PREPARING);
+                    refreshColumns();
+                    ToastNotification.info(SwingUtilities.getWindowAncestor(this), 
+                        "Bắt đầu nấu: " + order.getTableName());
+                });
+                actionsPanel.add(startBtn, "grow, span 2, h 32!");
+            } else if (order.getStatus() == OrderStatus.PREPARING) {
+                JButton doneBtn = createActionButton("✅ Xong tất cả", COL_READY);
+                doneBtn.addActionListener(e -> {
+                    // Mark all items as ready in memory AND DB
+                    for (OrderItem item : orderItems) {
+                        item.setReady(true);
+                        if (item.getOrderDetailId() > 0) {
+                            orderDAO.updateOrderDetailStatus(item.getOrderDetailId(), ItemStatus.READY);
+                        }
+                    }
+                    order.setStatus(OrderStatus.READY);
+                    refreshColumns();
+                    ToastNotification.success(SwingUtilities.getWindowAncestor(this), 
+                        "Sẵn sàng: " + order.getTableName());
+                    Toolkit.getDefaultToolkit().beep();
+                });
+                actionsPanel.add(doneBtn, "grow, span 2, h 32!");
+            } else if (order.getStatus() == OrderStatus.READY) {
+                JButton ringBtn = createActionButton("🔔 Gọi PV", COL_READY);
+                ringBtn.addActionListener(e -> {
+                    Toolkit.getDefaultToolkit().beep();
+                    ToastNotification.info(SwingUtilities.getWindowAncestor(this), 
+                        "Đã gọi phục vụ: " + order.getTableName());
+                });
+                actionsPanel.add(ringBtn, "grow, h 32!");
+                
+                JButton clearBtn = createActionButton("✓ Đã lấy", CARD_BG);
+                clearBtn.addActionListener(e -> {
+                    orderManager.completeOrder(order.getId());
+                    refreshColumns();
+                });
+                actionsPanel.add(clearBtn, "grow, h 32!");
+            }
+            
+            card.add(actionsPanel, "growx, gaptop 4");
         }
-        
-        card.add(actionsPanel, "growx, gaptop 8");
         
         return card;
     }
     
     private JButton createActionButton(String text, Color bgColor) {
         JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 11));
         btn.setForeground(TEXT_WHITE);
         btn.setBackground(bgColor);
         btn.setBorderPainted(false);
         btn.setFocusPainted(false);
         btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btn.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        btn.putClientProperty(FlatClientProperties.STYLE, "arc: 6");
         return btn;
     }
     
@@ -497,19 +629,12 @@ public class KitchenPanel extends JPanel {
         if (window instanceof JFrame frame) {
             GraphicsDevice device = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
             
-            if (frame.getExtendedState() == JFrame.MAXIMIZED_BOTH && 
-                frame.isUndecorated()) {
+            if (device.getFullScreenWindow() == frame) {
                 // Exit fullscreen
-                frame.dispose();
-                frame.setUndecorated(false);
-                frame.setExtendedState(JFrame.NORMAL);
-                frame.setVisible(true);
+                device.setFullScreenWindow(null);
             } else {
-                // Enter fullscreen
-                frame.dispose();
-                frame.setUndecorated(true);
-                frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
-                frame.setVisible(true);
+                // Enter fullscreen using GraphicsDevice API (smoother, no flicker)
+                device.setFullScreenWindow(frame);
                 
                 // ESC to exit
                 getRootPane().registerKeyboardAction(
@@ -527,15 +652,19 @@ public class KitchenPanel extends JPanel {
             @Override
             public void run() {
                 SwingUtilities.invokeLater(() -> {
+                    // Load from database for real-time sync
+                    orderManager.loadFromDatabase();
                     orders = orderManager.getPendingOrders();
                     refreshColumns();
                 });
             }
-        }, 5000, 5000);
+        }, 2000, 3000); // Faster refresh: 3 seconds
     }
     
     public void refresh() {
-        loadOrders();
+        orderManager.loadFromDatabase();
+        orders = orderManager.getPendingOrders();
+        refreshColumns();
         ToastNotification.info(SwingUtilities.getWindowAncestor(this), "Đã làm mới");
     }
     
