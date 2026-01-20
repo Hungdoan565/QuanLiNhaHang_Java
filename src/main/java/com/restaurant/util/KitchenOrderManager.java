@@ -38,10 +38,13 @@ public class KitchenOrderManager {
     
     /**
      * Load orders from database - call this to sync with real data
-     * Loads OPEN orders with items that are PENDING, COOKING, or READY
+     * Loads OPEN orders with items that have been sent to kitchen (COOKING or READY status)
+     * or items that have sent_to_kitchen_at set (for waiting queue)
      */
     public void loadFromDatabase() {
-        // Use IFNULL for current_step in case column doesn't exist or is null
+        // Only load items that have been sent to kitchen:
+        // - COOKING or READY status, OR
+        // - PENDING with sent_to_kitchen_at set (sent but not started)
         String sql = """
             SELECT 
                 o.id AS order_id, o.order_code, t.name AS table_name, o.created_at,
@@ -52,7 +55,8 @@ public class KitchenOrderManager {
             JOIN order_details od ON o.id = od.order_id
             JOIN products p ON od.product_id = p.id
             WHERE o.status = 'OPEN' 
-              AND od.status IN ('PENDING', 'COOKING', 'READY')
+              AND (od.status IN ('COOKING', 'READY') 
+                   OR (od.status = 'PENDING' AND od.sent_to_kitchen_at IS NOT NULL))
             ORDER BY o.created_at, od.id
             """;
         
@@ -93,15 +97,35 @@ public class KitchenOrderManager {
                 }
                 
                 order.getItems().add(item);
-                
-                // Set order status based on items
-                if ("COOKING".equals(itemStatus)) {
-                    order.setStatus(OrderStatus.PREPARING);
-                } else if ("READY".equals(itemStatus) && order.getStatus() != OrderStatus.PREPARING) {
-                    if (order.getItems().stream().allMatch(OrderItem::isReady)) {
-                        order.setStatus(OrderStatus.READY);
-                    }
+            }
+            
+            // After loading all items, determine each order's status
+            for (KitchenOrder order : orderMap.values()) {
+                List<OrderItem> items = order.getItems();
+                if (items.isEmpty()) {
+                    continue;
                 }
+                
+                // Count items by status
+                boolean hasAnyPending = items.stream().anyMatch(i -> !i.isReady() && i.getCurrentStep() == 0);
+                boolean hasAnyCooking = items.stream().anyMatch(i -> !i.isReady() && i.getCurrentStep() > 0);
+                boolean allReady = items.stream().allMatch(OrderItem::isReady);
+                
+                if (allReady) {
+                    order.setStatus(OrderStatus.READY);
+                } else if (hasAnyCooking || items.stream().anyMatch(OrderItem::isReady)) {
+                    // Some items cooking or some already ready -> PREPARING
+                    order.setStatus(OrderStatus.PREPARING);
+                } else if (hasAnyPending) {
+                    // All items pending, none started -> WAITING
+                    order.setStatus(OrderStatus.WAITING);
+                } else {
+                    // Default to PREPARING if unclear
+                    order.setStatus(OrderStatus.PREPARING);
+                }
+                
+                logger.debug("Order {} status determined: {} (pending:{}, cooking:{}, allReady:{})", 
+                    order.getOrderCode(), order.getStatus(), hasAnyPending, hasAnyCooking, allReady);
             }
             
             // Update pending orders
@@ -158,6 +182,7 @@ public class KitchenOrderManager {
     
     /**
      * Mark order as completed and ready for serving
+     * Updates all items to SERVED status in database so they don't reappear on refresh
      */
     public void completeOrder(int orderId) {
         for (KitchenOrder order : pendingOrders) {
@@ -165,6 +190,17 @@ public class KitchenOrderManager {
                 order.setStatus(OrderStatus.READY);
                 completedOrders.add(order);
                 pendingOrders.remove(order);
+                
+                // Mark all items as SERVED in database to prevent reloading
+                String updateSql = "UPDATE order_details SET status = 'SERVED' WHERE order_id = ?";
+                try (Connection conn = DatabaseConnection.getInstance().getConnection();
+                     PreparedStatement stmt = conn.prepareStatement(updateSql)) {
+                    stmt.setInt(1, orderId);
+                    int updated = stmt.executeUpdate();
+                    logger.info("Marked order {} items as SERVED in DB (updated {} rows)", orderId, updated);
+                } catch (SQLException e) {
+                    logger.error("Error marking order {} as served: {}", orderId, e.getMessage(), e);
+                }
                 
                 // Notify ready listeners (POS)
                 notifyReadyListeners(order);

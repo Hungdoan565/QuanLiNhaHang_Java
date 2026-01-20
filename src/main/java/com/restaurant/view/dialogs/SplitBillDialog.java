@@ -285,6 +285,8 @@ public class SplitBillDialog extends JDialog {
     }
     
     private void updateSummary() {
+        if (summaryLabel == null) return; // Not yet initialized
+        
         if (currentSplit != null) {
             summaryLabel.setText(splitBillService.getSummaryText(currentSplit));
             summaryLabel.setForeground(currentSplit.isFullyPaid() ? SUCCESS : WARNING);

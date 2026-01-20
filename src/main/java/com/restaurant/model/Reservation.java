@@ -11,6 +11,7 @@ public class Reservation {
         PENDING("Đang chờ", "#FFC107"),
         CONFIRMED("Đã xác nhận", "#2196F3"),
         ARRIVED("Đã đến", "#4CAF50"),
+        COMPLETED("Hoàn tất", "#607D8B"),
         CANCELLED("Đã hủy", "#9E9E9E"),
         NO_SHOW("Không đến", "#F44336");
         

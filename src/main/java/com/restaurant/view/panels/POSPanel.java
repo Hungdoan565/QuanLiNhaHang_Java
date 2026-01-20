@@ -101,6 +101,7 @@ public class POSPanel extends JPanel {
     private JButton reserveBtn;
     private JButton cleaningBtn;
     private JButton sendKitchenBtn;
+    private JButton splitBillBtn;
     private JButton payBtn;
     private JPanel actionButtonsPanel;
     
@@ -477,7 +478,22 @@ public class POSPanel extends JPanel {
         selectedTable.setStatus(TableStatus.OCCUPIED);
         selectedTable.setGuestCount(currentReservation.getGuestCount());
         selectedTable.setOccupiedSince(LocalDateTime.now());
-        selectedTable.setCurrentOrderCode("ORD-" + String.format("%03d", (int)(Math.random() * 1000)));
+        
+        // CREATE ORDER IN DATABASE - Critical for persistence!
+        Order newOrder = orderService.getOrCreateOrderForTable(
+            selectedTable.getId(), currentUser.getId());
+        
+        if (newOrder != null) {
+            currentOrder = newOrder;
+            newOrder.setGuestCount(currentReservation.getGuestCount());
+            orderService.updateOrder(newOrder);
+            selectedTable.setCurrentOrderCode(newOrder.getOrderCode());
+            logger.info("Created order {} for reservation arrival at table {}", 
+                newOrder.getOrderCode(), selectedTable.getName());
+        } else {
+            selectedTable.setCurrentOrderCode("ORD-" + String.format("%03d", (int)(Math.random() * 1000)));
+            logger.warn("Failed to create order in DB for reservation arrival");
+        }
         
         orderItems.clear();
         refreshTableGrid();
@@ -627,13 +643,11 @@ public class POSPanel extends JPanel {
         sendKitchenBtn.setVisible(false);
         orderRow.add(sendKitchenBtn, "grow");
         
-        // Split Bill button - only for CASHIER/MANAGER/ADMIN
-        JButton splitBillBtn = createActionBtn("✂️ Chia bill", new Color(108, 117, 125));
+        // Split Bill button - always add, check permission at visibility time
+        splitBillBtn = createActionBtn("✂️ Chia bill", new Color(108, 117, 125));
         splitBillBtn.addActionListener(e -> openSplitBillDialog());
         splitBillBtn.setVisible(false);
-        if (currentUser.getRole() != null && currentUser.getRole().canBill()) {
-            orderRow.add(splitBillBtn, "grow");
-        }
+        orderRow.add(splitBillBtn, "grow");
         
         // Payment button - disabled for WAITER role
         if (currentUser.getRole() != null && currentUser.getRole().isWaiter()) {
@@ -1181,6 +1195,9 @@ public class POSPanel extends JPanel {
     }
     
     private void updateButtonStates() {
+        logger.debug("updateButtonStates called, selectedTable={}", 
+            selectedTable != null ? selectedTable.getName() : "null");
+        
         if (selectedTable == null) {
             openTableBtn.setVisible(true);
             openTableBtn.setEnabled(false);
@@ -1192,6 +1209,9 @@ public class POSPanel extends JPanel {
             payBtn.setVisible(false);
             return;
         }
+        
+        logger.debug("updateButtonStates: Table={}, Status={}", 
+            selectedTable.getName(), selectedTable.getStatus());
         
         switch (selectedTable.getStatus()) {
             case AVAILABLE -> {
@@ -1209,7 +1229,18 @@ public class POSPanel extends JPanel {
                 reserveBtn.setVisible(false);
                 cleaningBtn.setVisible(false);
                 sendKitchenBtn.setVisible(true);
-                sendKitchenBtn.setEnabled(!orderItems.isEmpty());
+                // Only enable if there are PENDING items to send
+                boolean hasPendingItems = orderItems.stream()
+                    .anyMatch(item -> item.status == com.restaurant.model.OrderDetail.ItemStatus.PENDING);
+                sendKitchenBtn.setEnabled(hasPendingItems);
+                sendKitchenBtn.setText(hasPendingItems ? "🍳 Gửi bếp" : "✓ Đã gửi bếp");
+                // Show split bill button if user has permission (Admin/Manager/Cashier)
+                if (splitBillBtn != null) {
+                    boolean canSeeSplitBill = currentUser.canBill();
+                    logger.debug("Split bill visibility: canBill={}, role={}", canSeeSplitBill, currentUser.getRoleName());
+                    splitBillBtn.setVisible(canSeeSplitBill);
+                    splitBillBtn.setEnabled(canSeeSplitBill && !orderItems.isEmpty());
+                }
                 payBtn.setVisible(true);
                 payBtn.setEnabled(true);
             }
@@ -1763,20 +1794,23 @@ public class POSPanel extends JPanel {
         
         KitchenOrderManager.getInstance().addOrder(kitchenOrder);
         
-        // Update item status in database to COOKING
+        // Mark items as sent to kitchen by setting sent_to_kitchen_at
+        // Status stays PENDING until chef clicks "Bắt đầu" to start cooking
         int updatedCount = 0;
         for (OrderItem item : pendingItems) {
             if (item.id > 0) {
-                boolean updated = orderService.updateItemStatus(item.id, 
-                    com.restaurant.model.OrderDetail.ItemStatus.COOKING);
+                // Update sent_to_kitchen_at in database - this makes item visible in Kitchen
+                boolean updated = orderService.markItemSentToKitchen(item.id);
                 if (updated) {
-                    item.status = com.restaurant.model.OrderDetail.ItemStatus.COOKING;
                     updatedCount++;
                 }
             }
         }
         
-        logger.info("Sent {} items to kitchen, updated {} in database", pendingItems.size(), updatedCount);
+        logger.info("Sent {} items to kitchen, marked {} as sent in database", pendingItems.size(), updatedCount);
+        
+        // Force kitchen to reload from database
+        KitchenOrderManager.getInstance().loadFromDatabase();
         
         // Refresh UI to show updated status
         refreshOrderItems();
@@ -1784,10 +1818,8 @@ public class POSPanel extends JPanel {
         ToastNotification.success(SwingUtilities.getWindowAncestor(this),
             "Đã gửi " + pendingItems.size() + " món xuống bếp!");
         
-        // Check if all items are sent
-        boolean allSent = orderItems.stream()
-            .allMatch(item -> item.status != com.restaurant.model.OrderDetail.ItemStatus.PENDING);
-        if (allSent) {
+        // Disable send button after sending
+        if (updatedCount > 0) {
             sendKitchenBtn.setEnabled(false);
             sendKitchenBtn.setText("✓ Đã gửi bếp");
         }
@@ -1946,9 +1978,40 @@ public class POSPanel extends JPanel {
                 tierDiscount[0] = cust.calculateTierDiscount(total);
                 custInfoPanel.setVisible(true);
             } else {
-                custInfoPanel.setVisible(false);
-                selectedCustomer[0] = null;
-                com.restaurant.util.ToastNotification.info(dialog, "Không tìm thấy khách hàng. Có thể tạo mới sau.");
+                // Customer not found - offer to create new
+                int choice = JOptionPane.showConfirmDialog(dialog,
+                    "Không tìm thấy khách hàng.\nTạo thành viên mới với SĐT " + phone + "?",
+                    "Tạo khách hàng mới", JOptionPane.YES_NO_OPTION);
+                
+                if (choice == JOptionPane.YES_OPTION) {
+                    String inputName = JOptionPane.showInputDialog(dialog, "Tên khách hàng:", "Khách " + phone);
+                    if (inputName != null && !inputName.trim().isEmpty()) {
+                        com.restaurant.model.Customer newCust = new com.restaurant.model.Customer();
+                        newCust.setPhone(phone);
+                        newCust.setFullName(inputName.trim());
+                        com.restaurant.service.CustomerService.getInstance().createCustomer(newCust);
+                        
+                        // Reload and display
+                        com.restaurant.model.Customer createdCust = com.restaurant.service.CustomerService.getInstance().getByPhone(phone);
+                        if (createdCust != null) {
+                            selectedCustomer[0] = createdCust;
+                            custName.setText("✅ " + createdCust.getFullName() + " (Mới)");
+                            custTier.setText("🏅 Hạng: " + createdCust.getTier().getDisplayName() + 
+                                " (Giảm " + createdCust.getTier().getDiscountPercent() + "%)");
+                            custPoints.setText("💎 Điểm: " + createdCust.getLoyaltyPoints() + " (= " + 
+                                currencyFormat.format(createdCust.getLoyaltyPoints() * 100) + ")");
+                            tierDiscount[0] = createdCust.calculateTierDiscount(total);
+                            custInfoPanel.setVisible(true);
+                            com.restaurant.util.ToastNotification.success(dialog, "Đã tạo thành viên mới: " + inputName.trim());
+                        }
+                    } else {
+                        custInfoPanel.setVisible(false);
+                        selectedCustomer[0] = null;
+                    }
+                } else {
+                    custInfoPanel.setVisible(false);
+                    selectedCustomer[0] = null;
+                }
             }
         });
         
@@ -2488,6 +2551,13 @@ public class POSPanel extends JPanel {
         // Reset promotion state
         paymentPromotion = null;
         paymentPromotionDiscount = null;
+        
+        // Complete any active reservation for this table
+        ReservationService.getInstance().getActiveForTable(selectedTable.getId())
+            .ifPresent(res -> {
+                ReservationService.getInstance().updateStatus(res.getId(), com.restaurant.model.Reservation.Status.COMPLETED);
+                logger.info("Marked reservation {} as COMPLETED after payment", res.getId());
+            });
         
         selectedTable.setStatus(TableStatus.AVAILABLE);
         selectedTable.setGuestCount(0);

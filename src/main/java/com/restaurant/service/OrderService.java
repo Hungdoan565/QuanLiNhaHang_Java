@@ -124,6 +124,13 @@ public class OrderService {
     }
     
     /**
+     * Mark item as sent to kitchen (sets sent_to_kitchen_at timestamp)
+     */
+    public boolean markItemSentToKitchen(int orderDetailId) {
+        return orderDAO.markItemSentToKitchen(orderDetailId);
+    }
+    
+    /**
      * Hủy order
      */
     public boolean cancelOrder(int orderId, int userId, String reason) {

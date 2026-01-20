@@ -77,6 +77,11 @@ public interface IOrderDAO {
     boolean updateOrderDetailStatus(int orderDetailId, com.restaurant.model.OrderDetail.ItemStatus status);
     
     /**
+     * Mark item as sent to kitchen (sets sent_to_kitchen_at timestamp)
+     */
+    boolean markItemSentToKitchen(int orderDetailId);
+    
+    /**
      * Tính tổng tiền order
      */
     java.math.BigDecimal calculateTotal(int orderId);

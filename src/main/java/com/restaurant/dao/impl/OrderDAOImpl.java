@@ -423,6 +423,28 @@ public class OrderDAOImpl implements IOrderDAO {
     }
     
     @Override
+    public boolean markItemSentToKitchen(int orderDetailId) {
+        String sql = "UPDATE order_details SET sent_to_kitchen_at = NOW() WHERE id = ? AND sent_to_kitchen_at IS NULL";
+        
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            
+            stmt.setInt(1, orderDetailId);
+            
+            int affected = stmt.executeUpdate();
+            if (affected > 0) {
+                logger.debug("Marked order detail {} as sent to kitchen", orderDetailId);
+                return true;
+            }
+            
+        } catch (SQLException e) {
+            logger.error("Error marking order detail as sent to kitchen", e);
+        }
+        
+        return false;
+    }
+    
+    @Override
     public BigDecimal calculateTotal(int orderId) {
         String sql = "SELECT SUM(subtotal) as total FROM order_details WHERE order_id = ? AND status != 'CANCELLED'";
         

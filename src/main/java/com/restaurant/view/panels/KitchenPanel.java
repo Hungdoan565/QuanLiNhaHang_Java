@@ -395,7 +395,7 @@ public class KitchenPanel extends JPanel {
         long minutes = order.getMinutesElapsed();
         boolean isUrgent = minutes > 15;
         Color accentColor = isUrgent ? STATUS_URGENT : getStatusColor(order.getStatus());
-        boolean isViewOnly = !currentUser.getRole().isChef(); // Admin/Manager can view but not act
+        boolean isViewOnly = !currentUser.getRole().canAccessKitchen(); // Allow Chef, Admin, Manager to act
         
         JPanel card = new JPanel(new MigLayout("wrap, insets 8, gap 4", "[grow]", "")) {
             @Override
@@ -480,23 +480,35 @@ public class KitchenPanel extends JPanel {
             check.addActionListener(e -> {
                 // Mark item as ready/not ready (in memory)
                 currentItem.setReady(check.isSelected());
-                logger.debug("Item {} toggled: {}", currentItem.getName(), check.isSelected());
+                // Also update currentStep to reflect status
+                if (check.isSelected()) {
+                    currentItem.setCurrentStep(3); // Completed
+                } else {
+                    currentItem.setCurrentStep(1); // Back to cooking
+                }
+                logger.debug("Item {} toggled: ready={}, step={}", currentItem.getName(), check.isSelected(), currentItem.getCurrentStep());
                 
                 // Persist to database
                 ItemStatus newStatus = check.isSelected() ? ItemStatus.READY : ItemStatus.COOKING;
                 if (currentItem.getOrderDetailId() > 0) {
-                    orderDAO.updateOrderDetailStatus(currentItem.getOrderDetailId(), newStatus);
-                    logger.debug("Updated DB: order_detail {} -> {}", currentItem.getOrderDetailId(), newStatus);
+                    boolean success = orderDAO.updateOrderDetailStatus(currentItem.getOrderDetailId(), newStatus);
+                    logger.info("Updated DB: order_detail {} -> {} (success: {})", currentItem.getOrderDetailId(), newStatus, success);
                 }
                 
-                // Check if all items are now ready -> auto-transition to READY
-                if (order.getStatus() == OrderStatus.PREPARING && 
-                    orderItems.stream().allMatch(KitchenOrderManager.OrderItem::isReady)) {
+                // Re-determine order status based on all items
+                List<OrderItem> allItems = order.getItems();
+                boolean allReady = allItems.stream().allMatch(KitchenOrderManager.OrderItem::isReady);
+                boolean hasAnyCooking = allItems.stream().anyMatch(itm -> !itm.isReady() && itm.getCurrentStep() > 0);
+                
+                if (allReady) {
                     order.setStatus(OrderStatus.READY);
                     refreshColumns();
                     ToastNotification.success(SwingUtilities.getWindowAncestor(this), 
                         "Tất cả món đã xong: " + order.getTableName());
                     Toolkit.getDefaultToolkit().beep();
+                } else if (hasAnyCooking) {
+                    order.setStatus(OrderStatus.PREPARING);
+                    refreshColumns();
                 } else {
                     refreshColumns();
                 }
@@ -533,7 +545,7 @@ public class KitchenPanel extends JPanel {
         
         card.add(itemsPanel, "growx");
         
-        // Action buttons based on status - only show for Chef
+        // Action buttons based on status - show for Chef, Admin, Manager
         if (!isViewOnly) {
             JPanel actionsPanel = new JPanel(new MigLayout("insets 0, gap 4", "[grow][grow]", ""));
             actionsPanel.setOpaque(false);
@@ -541,8 +553,9 @@ public class KitchenPanel extends JPanel {
             if (order.getStatus() == OrderStatus.WAITING) {
                 JButton startBtn = createActionButton("🔥 Bắt đầu", COL_COOKING);
                 startBtn.addActionListener(e -> {
-                    // Mark all items as COOKING in DB
+                    // Mark all items as COOKING in DB and update currentStep
                     for (OrderItem item : orderItems) {
+                        item.setCurrentStep(1); // Started cooking
                         if (item.getOrderDetailId() > 0) {
                             orderDAO.updateOrderDetailStatus(item.getOrderDetailId(), ItemStatus.COOKING);
                         }
@@ -559,6 +572,7 @@ public class KitchenPanel extends JPanel {
                     // Mark all items as ready in memory AND DB
                     for (OrderItem item : orderItems) {
                         item.setReady(true);
+                        item.setCurrentStep(3); // Completed
                         if (item.getOrderDetailId() > 0) {
                             orderDAO.updateOrderDetailStatus(item.getOrderDetailId(), ItemStatus.READY);
                         }
