@@ -1,5 +1,6 @@
 import java.io.*;
 import java.nio.file.*;
+import java.util.*;
 import java.util.jar.*;
 import java.util.zip.*;
 
@@ -49,6 +50,12 @@ public class UpdateJar {
             "com/restaurant/view/panels/POSPanel$OrderItem.class"
         };
         
+        List<String> classFileList = new ArrayList<>(Arrays.asList(classFiles));
+        List<String> entryNameList = new ArrayList<>(Arrays.asList(entryNames));
+        
+        addPanelClasses("CustomerPanel", classFileList, entryNameList);
+        addPanelClasses("PromotionPanel", classFileList, entryNameList);
+        
         File tempJar = new File(jarFile + ".tmp");
         
         // Read original JAR and write to temp with updated class
@@ -61,7 +68,7 @@ public class UpdateJar {
             while ((entry = jis.getNextJarEntry()) != null) {
                 // Skip the classes we're updating
                 boolean skip = false;
-                for (String name : entryNames) {
+                for (String name : entryNameList) {
                     if (entry.getName().equals(name)) {
                         System.out.println("Skipping old: " + entry.getName());
                         skip = true;
@@ -79,10 +86,10 @@ public class UpdateJar {
             }
             
             // Add updated classes
-            for (int i = 0; i < classFiles.length; i++) {
-                System.out.println("Adding new: " + entryNames[i]);
-                jos.putNextEntry(new JarEntry(entryNames[i]));
-                Files.copy(Paths.get(classFiles[i]), jos);
+            for (int i = 0; i < classFileList.size(); i++) {
+                System.out.println("Adding new: " + entryNameList.get(i));
+                jos.putNextEntry(new JarEntry(entryNameList.get(i)));
+                Files.copy(Paths.get(classFileList.get(i)), jos);
                 jos.closeEntry();
             }
         }
@@ -92,5 +99,22 @@ public class UpdateJar {
         Files.move(tempJar.toPath(), Paths.get(jarFile));
         
         System.out.println("JAR updated successfully!");
+    }
+    
+    private static void addPanelClasses(String panelPrefix, List<String> classFiles, List<String> entryNames) throws IOException {
+        Path panelDir = Paths.get("target", "classes", "com", "restaurant", "view", "panels");
+        if (!Files.exists(panelDir)) return;
+        
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(panelDir, panelPrefix + "*.class")) {
+            for (Path path : stream) {
+                String fileName = path.getFileName().toString();
+                String entryName = "com/restaurant/view/panels/" + fileName;
+                String classFile = path.toString();
+                if (!classFiles.contains(classFile)) {
+                    classFiles.add(classFile);
+                    entryNames.add(entryName);
+                }
+            }
+        }
     }
 }

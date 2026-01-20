@@ -35,6 +35,7 @@ public class CustomerPanel extends JPanel {
     private static final Color PRIMARY = Color.decode(AppConfig.Colors.PRIMARY);
     private static final Color SUCCESS = Color.decode(AppConfig.Colors.SUCCESS);
     private static final Color WARNING = Color.decode(AppConfig.Colors.WARNING);
+    private static final Color DANGER = Color.decode(AppConfig.Colors.ERROR);
     private static final Color TEXT_PRIMARY = Color.decode(AppConfig.Colors.TEXT_PRIMARY);
     private static final Color TEXT_SECONDARY = Color.decode(AppConfig.Colors.TEXT_SECONDARY);
     
@@ -126,7 +127,7 @@ public class CustomerPanel extends JPanel {
         customerTable.getColumnModel().getColumn(4).setPreferredWidth(80);
         customerTable.getColumnModel().getColumn(5).setPreferredWidth(120);
         customerTable.getColumnModel().getColumn(6).setPreferredWidth(70);
-        customerTable.getColumnModel().getColumn(7).setPreferredWidth(150);
+        customerTable.getColumnModel().getColumn(7).setPreferredWidth(220);
         
         JScrollPane scroll = new JScrollPane(customerTable);
         scroll.setBorder(BorderFactory.createLineBorder(Color.decode(AppConfig.Colors.BORDER)));
@@ -385,16 +386,27 @@ public class CustomerPanel extends JPanel {
         }
     }
     
+    private JButton createActionButton(String text, Color bg, String tooltip) {
+        JButton button = new JButton(text);
+        button.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 11));
+        button.setBackground(bg);
+        button.setForeground(Color.WHITE);
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.putClientProperty(FlatClientProperties.STYLE, "arc: 6; margin: 2,6,2,6");
+        button.setToolTipText(tooltip);
+        return button;
+    }
+    
     private class ButtonRenderer extends JPanel implements TableCellRenderer {
-        JButton editBtn = new JButton("✏️");
-        JButton bonusBtn = new JButton("🎁");
-        JButton deleteBtn = new JButton("🗑️");
+        JButton editBtn = createActionButton("Sửa", PRIMARY, "Sửa khách hàng");
+        JButton bonusBtn = createActionButton("Tặng điểm", SUCCESS, "Tặng điểm thưởng");
+        JButton deleteBtn = createActionButton("Xóa", DANGER, "Xóa khách hàng");
         
         public ButtonRenderer() {
-            setLayout(new FlowLayout(FlowLayout.CENTER, 2, 2));
-            editBtn.setToolTipText("Sửa");
-            bonusBtn.setToolTipText("Tặng điểm");
-            deleteBtn.setToolTipText("Xóa");
+            setLayout(new FlowLayout(FlowLayout.CENTER, 6, 6));
+            setOpaque(true);
             add(editBtn);
             add(bonusBtn);
             add(deleteBtn);
@@ -415,16 +427,19 @@ public class CustomerPanel extends JPanel {
         
         public ButtonEditor() {
             super(new JCheckBox());
-            panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 2));
+            panel = new JPanel();
+            panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
+            panel.setOpaque(true);
+            panel.add(Box.createHorizontalGlue());
             
-            editBtn = new JButton("✏️");
+            editBtn = createActionButton("Sửa", PRIMARY, "Sửa khách hàng");
             editBtn.addActionListener(e -> {
                 Customer c = customerService.getById(customerId);
                 if (c != null) showCustomerDialog(c);
                 fireEditingStopped();
             });
             
-            bonusBtn = new JButton("🎁");
+            bonusBtn = createActionButton("Tặng điểm", SUCCESS, "Tặng điểm thưởng");
             bonusBtn.addActionListener(e -> {
                 String input = JOptionPane.showInputDialog(CustomerPanel.this, 
                     "Nhập số điểm thưởng:", "Tặng điểm", JOptionPane.PLAIN_MESSAGE);
@@ -444,7 +459,7 @@ public class CustomerPanel extends JPanel {
                 fireEditingStopped();
             });
             
-            deleteBtn = new JButton("🗑️");
+            deleteBtn = createActionButton("Xóa", DANGER, "Xóa khách hàng");
             deleteBtn.addActionListener(e -> {
                 int confirm = JOptionPane.showConfirmDialog(CustomerPanel.this,
                     "Xác nhận xóa khách hàng?", "Xóa", JOptionPane.YES_NO_OPTION);
@@ -459,8 +474,11 @@ public class CustomerPanel extends JPanel {
             });
             
             panel.add(editBtn);
+            panel.add(Box.createHorizontalStrut(4));
             panel.add(bonusBtn);
+            panel.add(Box.createHorizontalStrut(4));
             panel.add(deleteBtn);
+            panel.add(Box.createHorizontalGlue());
         }
         
         @Override

@@ -72,10 +72,22 @@ public class Sidebar extends JPanel {
         // Divider
         add(createDivider(), "h 1!, gaptop 8, gapbottom 8");
         
-        // Menu container
+        // Menu container with scroll
         menuContainer = new JPanel(new MigLayout("wrap, insets 8, gap 4", "[fill]", ""));
         menuContainer.setOpaque(false);
-        add(menuContainer, "grow");
+        
+        JScrollPane scrollPane = new JScrollPane(menuContainer);
+        scrollPane.setOpaque(false);
+        scrollPane.getViewport().setOpaque(false);
+        scrollPane.setBorder(null);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        
+        // Ẩn scrollbar nhưng vẫn giữ chức năng cuộn
+        scrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(0, 0));
+        
+        add(scrollPane, "grow");
         
         // Footer (Toggle + Logout)
         JPanel footer = createFooter();

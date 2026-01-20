@@ -37,6 +37,7 @@ public class PromotionPanel extends JPanel {
     private static final Color SUCCESS = Color.decode(AppConfig.Colors.SUCCESS);
     private static final Color WARNING = Color.decode(AppConfig.Colors.WARNING);
     private static final Color ERROR = Color.decode(AppConfig.Colors.ERROR);
+    private static final Color DANGER = Color.decode(AppConfig.Colors.ERROR);
     private static final Color TEXT_PRIMARY = Color.decode(AppConfig.Colors.TEXT_PRIMARY);
     private static final Color TEXT_SECONDARY = Color.decode(AppConfig.Colors.TEXT_SECONDARY);
     
@@ -119,7 +120,7 @@ public class PromotionPanel extends JPanel {
         promotionTable.getColumnModel().getColumn(4).setPreferredWidth(100);
         promotionTable.getColumnModel().getColumn(5).setPreferredWidth(150);
         promotionTable.getColumnModel().getColumn(6).setPreferredWidth(100);
-        promotionTable.getColumnModel().getColumn(7).setPreferredWidth(100);
+        promotionTable.getColumnModel().getColumn(7).setPreferredWidth(160);
         
         JScrollPane scroll = new JScrollPane(promotionTable);
         scroll.setBorder(BorderFactory.createLineBorder(Color.decode(AppConfig.Colors.BORDER)));
@@ -227,6 +228,17 @@ public class PromotionPanel extends JPanel {
         // Type
         content.add(new JLabel("Loại: *"));
         JComboBox<PromotionType> typeCombo = new JComboBox<>(PromotionType.values());
+        typeCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                    boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof PromotionType type) {
+                    setText(type.getDisplayName());
+                }
+                return this;
+            }
+        });
         typeCombo.setSelectedItem(promo.getType() != null ? promo.getType() : PromotionType.PERCENT);
         content.add(typeCombo, "growx");
         
@@ -272,9 +284,26 @@ public class PromotionPanel extends JPanel {
         
         // Tier
         content.add(new JLabel("Hạng tối thiểu:"));
-        JComboBox<String> tierCombo = new JComboBox<>(new String[]{"-- Tất cả --", "REGULAR", "SILVER", "GOLD", "VIP"});
+        JComboBox<Object> tierCombo = new JComboBox<>(new Object[]{
+            "-- Tất cả --",
+            CustomerTier.REGULAR,
+            CustomerTier.SILVER,
+            CustomerTier.GOLD,
+            CustomerTier.VIP
+        });
+        tierCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                    boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof CustomerTier tier) {
+                    setText(tier.getDisplayName());
+                }
+                return this;
+            }
+        });
         if (promo.getMinCustomerTier() != null) {
-            tierCombo.setSelectedItem(promo.getMinCustomerTier().name());
+            tierCombo.setSelectedItem(promo.getMinCustomerTier());
         }
         content.add(tierCombo, "growx");
         
@@ -316,8 +345,8 @@ public class PromotionPanel extends JPanel {
                 
                 finalPromo.setApplicableHours(hoursField.getText().trim());
                 
-                int tierIndex = tierCombo.getSelectedIndex();
-                finalPromo.setMinCustomerTier(tierIndex > 0 ? CustomerTier.values()[tierIndex - 1] : null);
+                Object tierSelected = tierCombo.getSelectedItem();
+                finalPromo.setMinCustomerTier(tierSelected instanceof CustomerTier tier ? tier : null);
                 
                 String limitStr = limitField.getText().trim();
                 finalPromo.setUsageLimit(limitStr.isEmpty() ? null : Integer.parseInt(limitStr));
@@ -388,12 +417,26 @@ public class PromotionPanel extends JPanel {
         }
     }
     
+    private JButton createActionButton(String text, Color bg, String tooltip) {
+        JButton button = new JButton(text);
+        button.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 11));
+        button.setBackground(bg);
+        button.setForeground(Color.WHITE);
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.putClientProperty(FlatClientProperties.STYLE, "arc: 6; margin: 2,6,2,6");
+        button.setToolTipText(tooltip);
+        return button;
+    }
+    
     private class ButtonRenderer extends JPanel implements TableCellRenderer {
-        JButton editBtn = new JButton("✏️");
-        JButton deleteBtn = new JButton("🗑️");
+        JButton editBtn = createActionButton("Sửa", PRIMARY, "Sửa khuyến mãi");
+        JButton deleteBtn = createActionButton("Xóa", DANGER, "Xóa khuyến mãi");
         
         public ButtonRenderer() {
-            setLayout(new FlowLayout(FlowLayout.CENTER, 2, 2));
+            setLayout(new FlowLayout(FlowLayout.CENTER, 6, 6));
+            setOpaque(true);
             add(editBtn);
             add(deleteBtn);
         }
@@ -413,16 +456,19 @@ public class PromotionPanel extends JPanel {
         
         public ButtonEditor() {
             super(new JCheckBox());
-            panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 2));
+            panel = new JPanel();
+            panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
+            panel.setOpaque(true);
+            panel.add(Box.createHorizontalGlue());
             
-            editBtn = new JButton("✏️");
+            editBtn = createActionButton("Sửa", PRIMARY, "Sửa khuyến mãi");
             editBtn.addActionListener(e -> {
                 Promotion p = promotionService.getById(promoId);
                 if (p != null) showPromotionDialog(p);
                 fireEditingStopped();
             });
             
-            deleteBtn = new JButton("🗑️");
+            deleteBtn = createActionButton("Xóa", DANGER, "Xóa khuyến mãi");
             deleteBtn.addActionListener(e -> {
                 int confirm = JOptionPane.showConfirmDialog(PromotionPanel.this,
                     "Xác nhận xóa khuyến mãi?", "Xóa", JOptionPane.YES_NO_OPTION);
@@ -437,7 +483,9 @@ public class PromotionPanel extends JPanel {
             });
             
             panel.add(editBtn);
+            panel.add(Box.createHorizontalStrut(4));
             panel.add(deleteBtn);
+            panel.add(Box.createHorizontalGlue());
         }
         
         @Override
