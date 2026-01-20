@@ -55,6 +55,7 @@ public class UpdateJar {
         
         addPanelClasses("CustomerPanel", classFileList, entryNameList);
         addPanelClasses("PromotionPanel", classFileList, entryNameList);
+        addComponentClasses("Sidebar", classFileList, entryNameList);
         
         File tempJar = new File(jarFile + ".tmp");
         
@@ -109,6 +110,23 @@ public class UpdateJar {
             for (Path path : stream) {
                 String fileName = path.getFileName().toString();
                 String entryName = "com/restaurant/view/panels/" + fileName;
+                String classFile = path.toString();
+                if (!classFiles.contains(classFile)) {
+                    classFiles.add(classFile);
+                    entryNames.add(entryName);
+                }
+            }
+        }
+    }
+    
+    private static void addComponentClasses(String componentPrefix, List<String> classFiles, List<String> entryNames) throws IOException {
+        Path componentDir = Paths.get("target", "classes", "com", "restaurant", "view", "components");
+        if (!Files.exists(componentDir)) return;
+        
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(componentDir, componentPrefix + "*.class")) {
+            for (Path path : stream) {
+                String fileName = path.getFileName().toString();
+                String entryName = "com/restaurant/view/components/" + fileName;
                 String classFile = path.toString();
                 if (!classFiles.contains(classFile)) {
                     classFiles.add(classFile);
