@@ -619,13 +619,21 @@ public class POSPanel extends JPanel {
         panel.add(statusRow, "growx");
         
         // Row 2: Order action buttons (for occupied table)
-        JPanel orderRow = new JPanel(new MigLayout("insets 0, gap 6", "[grow][grow]", ""));
+        JPanel orderRow = new JPanel(new MigLayout("insets 0, gap 6", "[grow][grow][grow]", ""));
         orderRow.setOpaque(false);
         
         sendKitchenBtn = createActionBtn("🍳 Gửi bếp", WARNING);
         sendKitchenBtn.addActionListener(e -> sendToKitchen());
         sendKitchenBtn.setVisible(false);
         orderRow.add(sendKitchenBtn, "grow");
+        
+        // Split Bill button - only for CASHIER/MANAGER/ADMIN
+        JButton splitBillBtn = createActionBtn("✂️ Chia bill", new Color(108, 117, 125));
+        splitBillBtn.addActionListener(e -> openSplitBillDialog());
+        splitBillBtn.setVisible(false);
+        if (currentUser.getRole() != null && currentUser.getRole().canBill()) {
+            orderRow.add(splitBillBtn, "grow");
+        }
         
         // Payment button - disabled for WAITER role
         if (currentUser.getRole() != null && currentUser.getRole().isWaiter()) {
@@ -1092,6 +1100,16 @@ public class POSPanel extends JPanel {
         } else {
             currentOrder = null;
             orderItems.clear();
+        }
+        
+        // Force re-sync reservation status for this specific table
+        // This ensures RESERVED status is correct even if not synced during loadData
+        java.util.Optional<Reservation> resCheck = ReservationService.getInstance()
+            .getActiveForTable(table.getId());
+        if (resCheck.isPresent() && table.getStatus() == TableStatus.AVAILABLE) {
+            table.setStatus(TableStatus.RESERVED);
+            logger.info("Force-set table {} to RESERVED (found reservation ID={})", 
+                table.getName(), resCheck.get().getId());
         }
         
         updateOrderSection();
@@ -1669,8 +1687,16 @@ public class POSPanel extends JPanel {
                 if (result.isSuccess()) {
                     dialog.dispose();
                     
-                    // Update table status
+                    // Update table status in BOTH the list and selected reference
                     selectedTable.setStatus(TableStatus.RESERVED);
+                    // Also update in the main tables list
+                    for (Table t : tables) {
+                        if (t.getId() == selectedTable.getId()) {
+                            t.setStatus(TableStatus.RESERVED);
+                            break;
+                        }
+                    }
+                    
                     refreshTableGrid();
                     updateOrderSection();
                     updateButtonStates();
@@ -1778,6 +1804,49 @@ public class POSPanel extends JPanel {
         BigDecimal total = subtotal.add(vat);
         
         showPaymentDialog(subtotal, vat, total);
+    }
+    
+    private void openSplitBillDialog() {
+        if (selectedTable == null || !selectedTable.hasActiveOrder()) {
+            ToastNotification.warning(SwingUtilities.getWindowAncestor(this), 
+                "Vui lòng chọn bàn có đơn hàng để chia bill");
+            return;
+        }
+        
+        if (orderItems.isEmpty()) {
+            ToastNotification.warning(SwingUtilities.getWindowAncestor(this), 
+                "Đơn hàng chưa có món để chia");
+            return;
+        }
+        
+        // Calculate current order total
+        BigDecimal subtotal = BigDecimal.ZERO;
+        for (OrderItem item : orderItems) {
+            subtotal = subtotal.add(item.price.multiply(new BigDecimal(item.quantity)));
+        }
+        BigDecimal vat = subtotal.multiply(new BigDecimal("0.08"));
+        BigDecimal total = subtotal.add(vat);
+        
+        // Create a temporary Order object for the dialog
+        Order order = new Order();
+        order.setId(currentOrder != null ? currentOrder.getId() : 0);
+        order.setOrderCode(selectedTable.getCurrentOrderCode());
+        order.setTotalAmount(total);
+        
+        // Open split bill dialog
+        com.restaurant.view.dialogs.SplitBillDialog dialog = 
+            new com.restaurant.view.dialogs.SplitBillDialog(
+                SwingUtilities.getWindowAncestor(this), 
+                order,
+                splitBill -> {
+                    // On complete - close order and refresh
+                    if (splitBill.isFullyPaid()) {
+                        closeTable();
+                        ToastNotification.success(SwingUtilities.getWindowAncestor(this),
+                            "🎉 Đã thanh toán thành công bằng chia bill!");
+                    }
+                });
+        dialog.setVisible(true);
     }
     
     private void showPaymentDialog(BigDecimal subtotal, BigDecimal vat, BigDecimal total) {
@@ -2441,6 +2510,34 @@ public class POSPanel extends JPanel {
             "Thanh toán thành công! " + selectedTable.getName() + " đã trống." + 
             (hadCustomer ? " Đã tích điểm!" : ""));
         
+        selectedTable = null;
+        selectedTableCard = null;
+    }
+    
+    private void closeTable() {
+        if (selectedTable == null) return;
+        
+        // Reset table status
+        selectedTable.setStatus(TableStatus.AVAILABLE);
+        selectedTable.setGuestCount(0);
+        selectedTable.setOccupiedSince(null);
+        selectedTable.setCurrentOrderCode(null);
+        
+        // Clear order items
+        orderItems.clear();
+        
+        // Refresh UI
+        refreshTableGrid();
+        
+        CardLayout cl = (CardLayout) orderSectionContent.getLayout();
+        cl.show(orderSectionContent, "empty");
+        
+        updateButtonStates();
+        
+        // Switch back to table map
+        tableMapBtn.doClick();
+        
+        // Clear selection
         selectedTable = null;
         selectedTableCard = null;
     }

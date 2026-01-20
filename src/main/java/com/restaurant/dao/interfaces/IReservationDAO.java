@@ -69,4 +69,25 @@ public interface IReservationDAO {
      * Find active reservation for table (PENDING or CONFIRMED, today)
      */
     Optional<Reservation> findActiveForTable(int tableId);
+    
+    /**
+     * Check if there is a time conflict for a table within a time range
+     * @param tableId Table ID to check
+     * @param startTime Proposed reservation start time
+     * @param durationMinutes Duration of the reservation in minutes
+     * @param excludeReservationId Exclude this reservation ID (for updates), pass -1 for new
+     * @return true if there is a conflict
+     */
+    boolean hasTimeConflict(int tableId, java.time.LocalDateTime startTime, int durationMinutes, int excludeReservationId);
+    
+    /**
+     * Find reservations that are no-shows (past reservation time by threshold minutes, still PENDING/CONFIRMED)
+     * @param thresholdMinutes Minutes past reservation time to consider no-show (e.g., 30)
+     */
+    List<Reservation> findNoShows(int thresholdMinutes);
+    
+    /**
+     * Mark reservations as no-show  
+     */
+    int markNoShows(int thresholdMinutes);
 }

@@ -292,12 +292,17 @@ public class ReservationDAO implements IReservationDAO {
     
     @Override
     public Optional<Reservation> findActiveForTable(int tableId) {
+        // Find reservations that are:
+        // 1. For this table
+        // 2. PENDING, CONFIRMED, or ARRIVED status
+        // 3. Today or in the future (not past reservations)
         String sql = """
             SELECT r.*, t.name as table_name 
             FROM reservations r 
             LEFT JOIN tables t ON r.table_id = t.id 
             WHERE r.table_id = ?
-              AND r.status IN ('PENDING', 'CONFIRMED')
+              AND r.status IN ('PENDING', 'CONFIRMED', 'ARRIVED')
+              AND r.reservation_time >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
             ORDER BY r.reservation_time
             LIMIT 1
             """;
@@ -314,20 +319,22 @@ public class ReservationDAO implements IReservationDAO {
             
             if (rs.next()) {
                 Reservation r = mapResultSet(rs);
-                logger.info("Found reservation: id={}, customer={}, time={}", 
-                    r.getId(), r.getCustomerName(), r.getReservationTime());
+                logger.info("Found reservation: id={}, customer={}, time={}, status={}", 
+                    r.getId(), r.getCustomerName(), r.getReservationTime(), r.getStatus());
                 return Optional.of(r);
             } else {
-                logger.warn("No reservation found for table_id={}. Check DB manually.", tableId);
+                logger.warn("No active reservation found for table_id={}", tableId);
                 
-                // Debug: Try without time filter
-                String debugSql = "SELECT COUNT(*) FROM reservations WHERE table_id = ? AND status IN ('PENDING', 'CONFIRMED')";
+                // Debug: Check what reservations exist for this table
+                String debugSql = "SELECT id, status, reservation_time FROM reservations WHERE table_id = ? ORDER BY reservation_time DESC LIMIT 3";
                 try (PreparedStatement debugStmt = conn.prepareStatement(debugSql)) {
                     debugStmt.setInt(1, tableId);
                     ResultSet debugRs = debugStmt.executeQuery();
-                    if (debugRs.next()) {
-                        logger.info("DEBUG: Total pending/confirmed reservations for table {}: {}", 
-                            tableId, debugRs.getInt(1));
+                    while (debugRs.next()) {
+                        logger.info("DEBUG - Reservation id={}, status={}, time={}", 
+                            debugRs.getInt("id"), 
+                            debugRs.getString("status"), 
+                            debugRs.getTimestamp("reservation_time"));
                     }
                 }
             }
@@ -352,22 +359,37 @@ public class ReservationDAO implements IReservationDAO {
         
         r.setNotes(rs.getString("notes"));
         r.setStatus(Reservation.Status.valueOf(rs.getString("status")));
-        r.setNotified(rs.getBoolean("notified"));
         
-        int createdBy = rs.getInt("created_by");
-        if (!rs.wasNull()) {
-            r.setCreatedBy(createdBy);
+        // Safely get notified column (might not exist in older schemas)
+        try {
+            r.setNotified(rs.getBoolean("notified"));
+        } catch (SQLException ignored) {
+            r.setNotified(false);
         }
         
-        Timestamp createdAt = rs.getTimestamp("created_at");
-        if (createdAt != null) {
-            r.setCreatedAt(createdAt.toLocalDateTime());
-        }
+        // Safely get created_by (might be NULL)
+        try {
+            int createdBy = rs.getInt("created_by");
+            if (!rs.wasNull()) {
+                r.setCreatedBy(createdBy);
+            }
+        } catch (SQLException ignored) {}
         
-        Timestamp updatedAt = rs.getTimestamp("updated_at");
-        if (updatedAt != null) {
-            r.setUpdatedAt(updatedAt.toLocalDateTime());
-        }
+        // Safely get created_at
+        try {
+            Timestamp createdAt = rs.getTimestamp("created_at");
+            if (createdAt != null) {
+                r.setCreatedAt(createdAt.toLocalDateTime());
+            }
+        } catch (SQLException ignored) {}
+        
+        // Safely get updated_at (might not exist in older schemas)
+        try {
+            Timestamp updatedAt = rs.getTimestamp("updated_at");
+            if (updatedAt != null) {
+                r.setUpdatedAt(updatedAt.toLocalDateTime());
+            }
+        } catch (SQLException ignored) {}
         
         // Table name from JOIN
         try {
@@ -375,5 +397,90 @@ public class ReservationDAO implements IReservationDAO {
         } catch (SQLException ignored) {}
         
         return r;
+    }
+    
+    @Override
+    public boolean hasTimeConflict(int tableId, LocalDateTime startTime, int durationMinutes, int excludeReservationId) {
+        // Check for overlapping reservations within the time window
+        // A conflict exists if another reservation overlaps with [startTime, startTime + duration]
+        String sql = """
+            SELECT COUNT(*) FROM reservations 
+            WHERE table_id = ?
+              AND status IN ('PENDING', 'CONFIRMED')
+              AND id != ?
+              AND reservation_time BETWEEN DATE_SUB(?, INTERVAL ? MINUTE) AND DATE_ADD(?, INTERVAL ? MINUTE)
+            """;
+        
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            
+            stmt.setInt(1, tableId);
+            stmt.setInt(2, excludeReservationId > 0 ? excludeReservationId : -1);
+            stmt.setTimestamp(3, Timestamp.valueOf(startTime));
+            stmt.setInt(4, durationMinutes);
+            stmt.setTimestamp(5, Timestamp.valueOf(startTime));
+            stmt.setInt(6, durationMinutes);
+            
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                return rs.getInt(1) > 0;
+            }
+        } catch (SQLException e) {
+            logger.error("Error checking time conflict for table {}: {}", tableId, e.getMessage(), e);
+        }
+        return false;
+    }
+    
+    @Override
+    public List<Reservation> findNoShows(int thresholdMinutes) {
+        String sql = """
+            SELECT r.*, t.name as table_name 
+            FROM reservations r 
+            LEFT JOIN tables t ON r.table_id = t.id 
+            WHERE r.status IN ('PENDING', 'CONFIRMED')
+              AND r.reservation_time < DATE_SUB(NOW(), INTERVAL ? MINUTE)
+              AND DATE(r.reservation_time) = CURDATE()
+            ORDER BY r.reservation_time
+            """;
+        
+        List<Reservation> list = new ArrayList<>();
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            
+            stmt.setInt(1, thresholdMinutes);
+            ResultSet rs = stmt.executeQuery();
+            
+            while (rs.next()) {
+                list.add(mapResultSet(rs));
+            }
+        } catch (SQLException e) {
+            logger.error("Error finding no-shows: {}", e.getMessage(), e);
+        }
+        return list;
+    }
+    
+    @Override
+    public int markNoShows(int thresholdMinutes) {
+        String sql = """
+            UPDATE reservations 
+            SET status = 'NO_SHOW'
+            WHERE status IN ('PENDING', 'CONFIRMED')
+              AND reservation_time < DATE_SUB(NOW(), INTERVAL ? MINUTE)
+              AND DATE(reservation_time) = CURDATE()
+            """;
+        
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            
+            stmt.setInt(1, thresholdMinutes);
+            int count = stmt.executeUpdate();
+            if (count > 0) {
+                logger.info("Marked {} reservations as NO_SHOW (threshold: {} minutes)", count, thresholdMinutes);
+            }
+            return count;
+        } catch (SQLException e) {
+            logger.error("Error marking no-shows: {}", e.getMessage(), e);
+        }
+        return 0;
     }
 }

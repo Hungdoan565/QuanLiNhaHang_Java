@@ -38,7 +38,7 @@ public class ReservationService {
     }
     
     /**
-     * Create new reservation
+     * Create new reservation with time conflict detection
      */
     public ServiceResult<Reservation> createReservation(Reservation reservation) {
         // Validate
@@ -58,12 +58,13 @@ public class ReservationService {
             return ServiceResult.error("Số khách phải lớn hơn 0");
         }
         
-        // Check if table already has active reservation at that time
-        Optional<Reservation> existing = reservationDAO.findActiveForTable(reservation.getTableId());
-        if (existing.isPresent()) {
-            Reservation exist = existing.get();
-            return ServiceResult.error("Bàn đã có lịch đặt lúc " + exist.getFormattedTime() + 
-                " bởi " + exist.getCustomerName());
+        // Check for time conflict (90 minute reservation window by default)
+        int reservationDurationMinutes = 90;
+        if (reservationDAO.hasTimeConflict(reservation.getTableId(), 
+                reservation.getReservationTime(), reservationDurationMinutes, -1)) {
+            return ServiceResult.error(
+                "Bàn đã có lịch đặt trong khoảng thời gian này.\n" +
+                "Vui lòng chọn thời gian cách ít nhất " + reservationDurationMinutes + " phút.");
         }
         
         int id = reservationDAO.create(reservation);
@@ -161,9 +162,16 @@ public class ReservationService {
     }
     
     /**
-     * Check for reservations needing reminder
+     * Check for reservations needing reminder and mark no-shows
      */
     private void checkReminders() {
+        // 1. Check for no-shows (past 30 minutes)
+        int noShowCount = reservationDAO.markNoShows(30);
+        if (noShowCount > 0) {
+            logger.info("Auto-marked {} reservations as NO_SHOW", noShowCount);
+        }
+        
+        // 2. Send reminders for upcoming reservations
         List<Reservation> needReminder = reservationDAO.findNeedingReminder();
         
         for (Reservation reservation : needReminder) {

@@ -290,7 +290,6 @@ public class KitchenPanel extends JPanel {
         
         // Sort orders by time (oldest first)
         if (orders != null && !orders.isEmpty()) {
-            System.out.println("DEBUG: Processing " + orders.size() + " orders");
             orders.sort((a, b) -> a.getCreatedAt().compareTo(b.getCreatedAt()));
             
             for (KitchenOrder order : orders) {
@@ -298,31 +297,22 @@ public class KitchenPanel extends JPanel {
                 orderCount++;
                 
                 JPanel card = createOrderCard(order);
-                System.out.println("DEBUG: Order " + order.getOrderCode() + " status=" + order.getStatus() + 
-                    " card=" + (card != null ? "created" : "NULL"));
                 
                 switch (order.getStatus()) {
                     case WAITING -> {
                         waitingColumn.add(card, "growx");
                         waitingCount++;
-                        System.out.println("DEBUG: Added to WAITING column");
                     }
                     case PREPARING -> {
                         cookingColumn.add(card, "growx");
                         cookingCount++;
-                        System.out.println("DEBUG: Added to COOKING column");
                     }
                     case READY -> {
                         readyColumn.add(card, "growx");
                         readyCount++;
-                        System.out.println("DEBUG: Added to READY column");
                     }
                 }
             }
-            System.out.println("DEBUG: Final counts - waiting=" + waitingCount + 
-                " cooking=" + cookingCount + " ready=" + readyCount);
-        } else {
-            System.out.println("DEBUG: Orders list is null or empty!");
         }
         
         // Add empty state if no cards
@@ -658,7 +648,7 @@ public class KitchenPanel extends JPanel {
                     refreshColumns();
                 });
             }
-        }, 2000, 3000); // Faster refresh: 3 seconds
+        }, 5000, 10000); // Auto-refresh every 10 seconds
     }
     
     public void refresh() {

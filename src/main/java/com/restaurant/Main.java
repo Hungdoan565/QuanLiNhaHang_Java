@@ -33,6 +33,29 @@ public class Main {
         System.setProperty("awt.useSystemAAFontSettings", "on");
         System.setProperty("swing.aatext", "true");
         
+        // Global exception handler for uncaught exceptions
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            logger.fatal("❌ Uncaught exception in thread '{}': {}", 
+                thread.getName(), throwable.getMessage(), throwable);
+            
+            SwingUtilities.invokeLater(() -> {
+                String errorMessage = String.format(
+                    "Đã xảy ra lỗi không mong muốn.\n\n" +
+                    "Thread: %s\n" +
+                    "Lỗi: %s\n\n" +
+                    "Chi tiết đã được ghi vào logs/restaurant-pos.log\n" +
+                    "Vui lòng khởi động lại ứng dụng.",
+                    thread.getName(),
+                    throwable.getMessage() != null ? throwable.getMessage() : throwable.getClass().getSimpleName()
+                );
+                
+                JOptionPane.showMessageDialog(null,
+                    errorMessage,
+                    "⚠️ Lỗi hệ thống",
+                    JOptionPane.ERROR_MESSAGE);
+            });
+        });
+        
         // Initialize Look and Feel on EDT
         SwingUtilities.invokeLater(() -> {
             try {
