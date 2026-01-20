@@ -16,6 +16,9 @@ import com.restaurant.view.panels.POSPanel;
 import com.restaurant.view.panels.ReportsPanel;
 import com.restaurant.view.panels.ScheduleManagementPanel;
 import com.restaurant.view.panels.MySchedulePanel;
+import com.restaurant.view.panels.CustomerPanel;
+import com.restaurant.view.panels.PromotionPanel;
+import com.restaurant.view.panels.ReservationPanel;
 import com.restaurant.view.panels.SettingsPanel;
 import com.restaurant.view.panels.StaffPanel;
 import net.miginfocom.swing.MigLayout;
@@ -77,6 +80,9 @@ public class MainFrame extends JFrame {
     public static final String PANEL_STAFF = "staff";
     public static final String PANEL_SCHEDULE = "schedule";
     public static final String PANEL_MY_SCHEDULE = "my_schedule";
+    public static final String PANEL_CUSTOMERS = "customers";
+    public static final String PANEL_PROMOTIONS = "promotions";
+    public static final String PANEL_RESERVATIONS = "reservations";
     public static final String PANEL_REPORTS = "reports";
     public static final String PANEL_SETTINGS = "settings";
     
@@ -164,6 +170,9 @@ public class MainFrame extends JFrame {
         contentPanel.add(new StaffPanel(currentUser), PANEL_STAFF);
         contentPanel.add(new ScheduleManagementPanel(currentUser), PANEL_SCHEDULE);
         contentPanel.add(new MySchedulePanel(currentUser), PANEL_MY_SCHEDULE);
+        contentPanel.add(new CustomerPanel(currentUser), PANEL_CUSTOMERS);
+        contentPanel.add(new PromotionPanel(currentUser), PANEL_PROMOTIONS);
+        contentPanel.add(new ReservationPanel(currentUser), PANEL_RESERVATIONS);
         
         // Reports panel with error handling
         try {

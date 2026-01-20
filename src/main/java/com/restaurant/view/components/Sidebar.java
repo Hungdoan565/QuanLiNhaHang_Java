@@ -168,6 +168,21 @@ public class Sidebar extends JPanel {
                 addMenuItem(MainFrame.PANEL_SCHEDULE, "schedule", "Lịch làm việc", true);
             }
             
+            // Customers - Admin, Manager
+            if (role.canManageStaff()) {
+                addMenuItem(MainFrame.PANEL_CUSTOMERS, "customers", "Khách hàng", true);
+            }
+            
+            // Promotions - Admin, Manager
+            if (role.canManageStaff()) {
+                addMenuItem(MainFrame.PANEL_PROMOTIONS, "promotions", "Khuyến mãi", true);
+            }
+            
+            // Reservations - Admin, Manager
+            if (role.canManageStaff()) {
+                addMenuItem(MainFrame.PANEL_RESERVATIONS, "reservations", "Đặt bàn", true);
+            }
+            
             // Reports - Admin, Manager
             if (role.canAccessReports()) {
                 addMenuItem(MainFrame.PANEL_REPORTS, "reports", "Báo cáo", true);
@@ -284,6 +299,33 @@ public class Sidebar extends JPanel {
                         g2d.fillRect(x + p + 4, y + p + 9, 2, 2);
                         g2d.fillRect(x + p + 8, y + p + 9, 2, 2);
                         g2d.fillRect(x + p + 12, y + p + 9, 2, 2);
+                    }
+                    case "customers" -> {
+                        // Two people icon
+                        // Person 1 (left)
+                        g2d.drawOval(x + p + 2, y + p + 2, 4, 4);
+                        g2d.drawArc(x + p, y + p + 6, 6, 5, 0, 180);
+                        // Person 2 (right)
+                        g2d.drawOval(x + p + 8, y + p + 2, 4, 4);
+                        g2d.drawArc(x + p + 6, y + p + 6, 6, 5, 0, 180);
+                    }
+                    case "promotions" -> {
+                        // Gift box icon
+                        g2d.drawRoundRect(x + p + 2, y + p + 5, 10, 8, 2, 2);
+                        g2d.drawLine(x + p + 7, y + p + 5, x + p + 7, y + p + 13);
+                        g2d.drawLine(x + p + 2, y + p + 7, x + p + 12, y + p + 7);
+                        // Ribbon/bow
+                        g2d.drawArc(x + p + 4, y + p + 2, 4, 4, 0, 180);
+                        g2d.drawArc(x + p + 7, y + p + 2, 4, 4, 0, 180);
+                    }
+                    case "reservations" -> {
+                        // Calendar with clock icon
+                        g2d.drawRoundRect(x + p + 1, y + p + 3, 12, 10, 2, 2);
+                        g2d.drawLine(x + p + 1, y + p + 6, x + p + 13, y + p + 6);
+                        g2d.drawLine(x + p + 4, y + p + 1, x + p + 4, y + p + 4);
+                        g2d.drawLine(x + p + 10, y + p + 1, x + p + 10, y + p + 4);
+                        // Clock hands
+                        g2d.fillOval(x + p + 6, y + p + 8, 3, 3);
                     }
                     case "settings" -> {
                         // Gear/cog icon

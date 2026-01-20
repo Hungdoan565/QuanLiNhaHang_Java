@@ -104,6 +104,14 @@ public class POSPanel extends JPanel {
     private JButton payBtn;
     private JPanel actionButtonsPanel;
     
+    // Customer loyalty for current payment
+    private com.restaurant.model.Customer paymentCustomer;
+    private int paymentPointsToRedeem;
+    
+    // Promotion for current payment
+    private com.restaurant.model.Promotion paymentPromotion;
+    private java.math.BigDecimal paymentPromotionDiscount;
+    
     public POSPanel(User user) {
         this.currentUser = user;
         this.tableService = TableService.getInstance();
@@ -1786,6 +1794,223 @@ public class POSPanel extends JPanel {
         header.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 20));
         content.add(header, "center");
         
+        // ========== CUSTOMER LOOKUP SECTION ==========
+        JPanel customerSection = new JPanel(new MigLayout("wrap, insets 12", "[grow]", ""));
+        customerSection.setBackground(new Color(PRIMARY.getRed(), PRIMARY.getGreen(), PRIMARY.getBlue(), 20));
+        customerSection.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        
+        JLabel custTitle = new JLabel("👤 Khách hàng thành viên");
+        custTitle.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 13));
+        customerSection.add(custTitle);
+        
+        // Phone search row
+        JPanel phoneRow = new JPanel(new MigLayout("insets 0", "[grow][]", ""));
+        phoneRow.setOpaque(false);
+        
+        JTextField phoneField = new JTextField();
+        phoneField.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT, "Nhập SĐT khách hàng...");
+        phoneRow.add(phoneField, "growx");
+        
+        JButton searchCustBtn = new JButton("🔍");
+        phoneRow.add(searchCustBtn);
+        customerSection.add(phoneRow, "growx");
+        
+        // Customer info display
+        JPanel custInfoPanel = new JPanel(new MigLayout("wrap, insets 8", "[grow]", ""));
+        custInfoPanel.setOpaque(false);
+        custInfoPanel.setVisible(false);
+        
+        JLabel custName = new JLabel();
+        custName.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 14));
+        custInfoPanel.add(custName);
+        
+        JLabel custTier = new JLabel();
+        custTier.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 12));
+        custInfoPanel.add(custTier);
+        
+        JLabel custPoints = new JLabel();
+        custPoints.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 12));
+        custInfoPanel.add(custPoints);
+        
+        // Points redemption
+        JPanel redeemRow = new JPanel(new MigLayout("insets 4 0 0 0", "[][grow][]", ""));
+        redeemRow.setOpaque(false);
+        redeemRow.add(new JLabel("Đổi điểm:"));
+        JTextField redeemInput = new JTextField("0");
+        redeemInput.setHorizontalAlignment(SwingConstants.RIGHT);
+        redeemRow.add(redeemInput, "growx, w 80!");
+        JLabel redeemValue = new JLabel("= 0 ₫");
+        redeemRow.add(redeemValue);
+        custInfoPanel.add(redeemRow, "growx");
+        
+        customerSection.add(custInfoPanel, "growx");
+        
+        // Customer state holder
+        final com.restaurant.model.Customer[] selectedCustomer = {null};
+        final int[] pointsToRedeem = {0};
+        final BigDecimal[] discountFromPoints = {BigDecimal.ZERO};
+        final BigDecimal[] tierDiscount = {BigDecimal.ZERO};
+        
+        // Search customer action
+        searchCustBtn.addActionListener(e -> {
+            String phone = phoneField.getText().trim();
+            if (phone.isEmpty()) {
+                custInfoPanel.setVisible(false);
+                selectedCustomer[0] = null;
+                return;
+            }
+            
+            com.restaurant.model.Customer cust = com.restaurant.service.CustomerService.getInstance().getByPhone(phone);
+            if (cust != null) {
+                selectedCustomer[0] = cust;
+                custName.setText("✅ " + cust.getFullName());
+                custTier.setText("🏅 Hạng: " + cust.getTier().getDisplayName() + 
+                    " (Giảm " + cust.getTier().getDiscountPercent() + "%)");
+                custPoints.setText("💎 Điểm: " + cust.getLoyaltyPoints() + " (= " + 
+                    currencyFormat.format(cust.getLoyaltyPoints() * 100) + ")");
+                
+                tierDiscount[0] = cust.calculateTierDiscount(total);
+                custInfoPanel.setVisible(true);
+            } else {
+                custInfoPanel.setVisible(false);
+                selectedCustomer[0] = null;
+                com.restaurant.util.ToastNotification.info(dialog, "Không tìm thấy khách hàng. Có thể tạo mới sau.");
+            }
+        });
+        
+        // Redeem points input listener
+        redeemInput.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyReleased(KeyEvent e) {
+                try {
+                    int pts = Integer.parseInt(redeemInput.getText().trim());
+                    if (selectedCustomer[0] != null && pts <= selectedCustomer[0].getLoyaltyPoints()) {
+                        pointsToRedeem[0] = pts;
+                        discountFromPoints[0] = BigDecimal.valueOf(pts * 100);
+                        redeemValue.setText("= " + currencyFormat.format(discountFromPoints[0]));
+                    } else {
+                        pointsToRedeem[0] = 0;
+                        discountFromPoints[0] = BigDecimal.ZERO;
+                        redeemValue.setText("= 0 ₫ (không đủ điểm)");
+                    }
+                } catch (NumberFormatException ex) {
+                    pointsToRedeem[0] = 0;
+                    discountFromPoints[0] = BigDecimal.ZERO;
+                    redeemValue.setText("= 0 ₫");
+                }
+            }
+        });
+        
+        content.add(customerSection, "growx, gaptop 12");
+        
+        // ========== COUPON/PROMOTION SECTION ==========
+        JPanel couponSection = new JPanel(new MigLayout("wrap, insets 12", "[grow]", ""));
+        couponSection.setBackground(new Color(SUCCESS.getRed(), SUCCESS.getGreen(), SUCCESS.getBlue(), 20));
+        couponSection.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        
+        JLabel couponTitle = new JLabel("🎁 Mã khuyến mãi");
+        couponTitle.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 13));
+        couponSection.add(couponTitle);
+        
+        // Coupon input row
+        JPanel couponRow = new JPanel(new MigLayout("insets 0", "[grow][]", ""));
+        couponRow.setOpaque(false);
+        
+        JTextField couponField = new JTextField();
+        couponField.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT, "Nhập mã giảm giá (VD: WELCOME10)");
+        couponRow.add(couponField, "growx");
+        
+        JButton applyCouponBtn = new JButton("Áp dụng");
+        applyCouponBtn.setBackground(SUCCESS);
+        applyCouponBtn.setForeground(Color.WHITE);
+        couponRow.add(applyCouponBtn);
+        couponSection.add(couponRow, "growx");
+        
+        // Applied coupon display
+        JPanel appliedPanel = new JPanel(new MigLayout("wrap, insets 8", "[grow]", ""));
+        appliedPanel.setOpaque(false);
+        appliedPanel.setVisible(false);
+        
+        JLabel appliedLabel = new JLabel();
+        appliedLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 13));
+        appliedLabel.setForeground(SUCCESS);
+        appliedPanel.add(appliedLabel);
+        
+        JLabel discountLabel = new JLabel();
+        discountLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 12));
+        appliedPanel.add(discountLabel);
+        
+        JButton removeCouponBtn = new JButton("✕ Hủy mã");
+        removeCouponBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.PLAIN, 11));
+        appliedPanel.add(removeCouponBtn);
+        
+        couponSection.add(appliedPanel, "growx");
+        
+        // Coupon state
+        final com.restaurant.model.Promotion[] appliedPromotion = {null};
+        final BigDecimal[] couponDiscount = {BigDecimal.ZERO};
+        
+        // Apply coupon action
+        applyCouponBtn.addActionListener(e -> {
+            String code = couponField.getText().trim().toUpperCase();
+            if (code.isEmpty()) {
+                com.restaurant.util.ToastNotification.error(dialog, "Vui lòng nhập mã!");
+                return;
+            }
+            
+            com.restaurant.model.Promotion promo = com.restaurant.service.PromotionService.getInstance()
+                .validateCode(code, total, selectedCustomer[0]);
+            
+            if (promo != null && promo.isValid()) {
+                appliedPromotion[0] = promo;
+                couponDiscount[0] = promo.calculateDiscount(total);
+                
+                appliedLabel.setText("✅ " + promo.getName());
+                discountLabel.setText("Giảm: " + currencyFormat.format(couponDiscount[0]));
+                appliedPanel.setVisible(true);
+                couponField.setEnabled(false);
+                applyCouponBtn.setEnabled(false);
+                
+                // Update total display
+                BigDecimal newTotal = total.subtract(couponDiscount[0]);
+                totalValue.setText(currencyFormat.format(newTotal));
+                
+                com.restaurant.util.ToastNotification.success(dialog, "Đã áp dụng mã " + code + "!");
+            } else {
+                com.restaurant.util.ToastNotification.error(dialog, "Mã không hợp lệ hoặc không đủ điều kiện!");
+            }
+        });
+        
+        // Remove coupon action
+        removeCouponBtn.addActionListener(e -> {
+            appliedPromotion[0] = null;
+            couponDiscount[0] = BigDecimal.ZERO;
+            appliedPanel.setVisible(false);
+            couponField.setEnabled(true);
+            couponField.setText("");
+            applyCouponBtn.setEnabled(true);
+            totalValue.setText(currencyFormat.format(total));
+        });
+        
+        // Show auto-apply suggestions
+        java.util.List<com.restaurant.model.Promotion> autoPromotions = 
+            com.restaurant.service.PromotionService.getInstance().getAutoApplyPromotions(total, selectedCustomer[0]);
+        if (!autoPromotions.isEmpty()) {
+            JLabel suggestLabel = new JLabel("💡 Có thể áp dụng: ");
+            suggestLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.ITALIC, 11));
+            suggestLabel.setForeground(TEXT_SECONDARY);
+            
+            StringBuilder suggestText = new StringBuilder();
+            for (com.restaurant.model.Promotion p : autoPromotions) {
+                if (suggestText.length() > 0) suggestText.append(", ");
+                suggestText.append(p.getName()).append(" (-").append(currencyFormat.format(p.calculateDiscount(total))).append(")");
+            }
+            suggestLabel.setText("💡 " + suggestText.toString());
+            couponSection.add(suggestLabel, "growx, gaptop 4");
+        }
+        
+        content.add(couponSection, "growx, gaptop 8");
+        
         // Summary
         JPanel summary = new JPanel(new MigLayout("wrap 2, insets 12", "[grow][]", ""));
         summary.setBackground(BACKGROUND);
@@ -2026,6 +2251,12 @@ public class POSPanel extends JPanel {
         // Nhận tiền & Hoàn tất button  
         JButton confirmBtn = createActionBtn("✓ Nhận tiền & Hoàn tất", SUCCESS);
         confirmBtn.addActionListener(e -> {
+            // Set customer for loyalty processing
+            paymentCustomer = selectedCustomer[0];
+            paymentPointsToRedeem = pointsToRedeem[0];
+            // Set promotion for tracking
+            paymentPromotion = appliedPromotion[0];
+            paymentPromotionDiscount = couponDiscount[0];
             dialog.dispose();
             completePayment();
         });
@@ -2136,11 +2367,55 @@ public class POSPanel extends JPanel {
             if (success) {
                 logger.info("Order {} completed successfully - Revenue: {}", 
                     currentOrder.getOrderCode(), currentOrder.getTotalAmount());
+                
+                // Process loyalty points if customer is linked
+                if (paymentCustomer != null) {
+                    BigDecimal orderTotal = currentOrder.getTotalAmount();
+                    
+                    // Redeem points if requested
+                    if (paymentPointsToRedeem > 0) {
+                        com.restaurant.service.CustomerService.getInstance()
+                            .redeemPoints(paymentCustomer.getId(), currentOrder.getId(), paymentPointsToRedeem);
+                        logger.info("Redeemed {} points for customer {}", paymentPointsToRedeem, paymentCustomer.getId());
+                    }
+                    
+                    // Earn points from purchase
+                    com.restaurant.service.CustomerService.getInstance()
+                        .processOrderCompletion(paymentCustomer.getId(), currentOrder.getId(), orderTotal);
+                    
+                    int pointsEarned = paymentCustomer.calculatePointsFromAmount(orderTotal);
+                    logger.info("Customer {} earned {} points from order {}", 
+                        paymentCustomer.getId(), pointsEarned, currentOrder.getOrderCode());
+                }
+                
+                // Record promotion usage if coupon was applied
+                if (paymentPromotion != null && paymentPromotionDiscount != null && paymentPromotionDiscount.compareTo(BigDecimal.ZERO) > 0) {
+                    com.restaurant.service.PromotionService.getInstance().applyPromotion(
+                        paymentPromotion.getId(),
+                        currentOrder.getId(),
+                        paymentCustomer != null ? paymentCustomer.getId() : null,
+                        paymentPromotionDiscount
+                    );
+                    logger.info("Recorded promotion {} usage for order {}, discount: {}", 
+                        paymentPromotion.getCode(), currentOrder.getOrderCode(), paymentPromotionDiscount);
+                }
             } else {
                 logger.error("Failed to complete order {} in database", currentOrder.getOrderCode());
             }
             currentOrder = null;
         }
+        
+        // Store customer info for toast message before resetting
+        boolean hadCustomer = paymentCustomer != null;
+        boolean hadPromotion = paymentPromotion != null;
+        
+        // Reset payment customer state
+        paymentCustomer = null;
+        paymentPointsToRedeem = 0;
+        
+        // Reset promotion state
+        paymentPromotion = null;
+        paymentPromotionDiscount = null;
         
         selectedTable.setStatus(TableStatus.AVAILABLE);
         selectedTable.setGuestCount(0);
@@ -2160,7 +2435,8 @@ public class POSPanel extends JPanel {
         tableMapBtn.doClick();
         
         ToastNotification.success(SwingUtilities.getWindowAncestor(this),
-            "Thanh toán thành công! " + selectedTable.getName() + " đã trống.");
+            "Thanh toán thành công! " + selectedTable.getName() + " đã trống." + 
+            (hadCustomer ? " Đã tích điểm!" : ""));
         
         selectedTable = null;
         selectedTableCard = null;
