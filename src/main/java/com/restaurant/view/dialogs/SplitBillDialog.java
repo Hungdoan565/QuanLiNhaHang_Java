@@ -228,8 +228,21 @@ public class SplitBillDialog extends JDialog {
             displayMethods[0]);
         
         if (choice >= 0) {
+            String selectedMethod = methods[choice];
+            
+            // For TRANSFER, show QR dialog first
+            if ("TRANSFER".equals(selectedMethod)) {
+                TransferQRDialog qrDialog = new TransferQRDialog(this, part);
+                qrDialog.setVisible(true);
+                
+                if (!qrDialog.isConfirmed()) {
+                    return; // User cancelled
+                }
+            }
+            
+            // Process payment
             ServiceResult<SplitBillPart> result = splitBillService.payPart(
-                currentSplit, part.getPartNumber(), methods[choice]);
+                currentSplit, part.getPartNumber(), selectedMethod);
             
             if (result.isSuccess()) {
                 ToastNotification.success(this, result.getMessage());
@@ -246,7 +259,7 @@ public class SplitBillDialog extends JDialog {
     }
     
     private JPanel createFooter() {
-        JPanel footer = new JPanel(new MigLayout("insets 12 0 0 0", "[]push[][]", ""));
+        JPanel footer = new JPanel(new MigLayout("insets 12 0 0 0", "[]push[][][]", ""));
         footer.setOpaque(false);
         
         // Summary
@@ -254,6 +267,33 @@ public class SplitBillDialog extends JDialog {
         summaryLabel.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 14));
         summaryLabel.setForeground(TEXT_SECONDARY);
         footer.add(summaryLabel);
+        
+        // All QR button
+        JButton allQRBtn = new JButton("📱 Tất cả QR");
+        allQRBtn.setFont(new Font(AppConfig.FONT_FAMILY, Font.BOLD, 13));
+        allQRBtn.setBackground(PRIMARY);
+        allQRBtn.setForeground(Color.WHITE);
+        allQRBtn.setBorderPainted(false);
+        allQRBtn.putClientProperty(FlatClientProperties.STYLE, "arc: 8");
+        allQRBtn.addActionListener(e -> {
+            if (currentSplit == null) return;
+            
+            // Check if there are unpaid parts
+            boolean hasUnpaid = currentSplit.getParts().stream().anyMatch(p -> !p.isPaid());
+            if (!hasUnpaid) {
+                ToastNotification.info(this, "Tất cả các phần đã thanh toán!");
+                return;
+            }
+            
+            MultiQRDialog multiDialog = new MultiQRDialog(this, currentSplit, this::refreshPartsDisplay);
+            multiDialog.setVisible(true);
+            
+            // Check if all paid after closing
+            if (currentSplit.isFullyPaid()) {
+                handleComplete();
+            }
+        });
+        footer.add(allQRBtn);
         
         // Cancel button
         JButton cancelBtn = new JButton("Hủy");

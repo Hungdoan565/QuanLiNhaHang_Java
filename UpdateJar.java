@@ -4,14 +4,24 @@ import java.util.jar.*;
 import java.util.zip.*;
 
 /**
- * Simple utility to update a class file in a JAR
+ * Simple utility to update class files in a JAR
  * Usage: java UpdateJar.java
  */
 public class UpdateJar {
     public static void main(String[] args) throws Exception {
         String jarFile = "target\\restaurant-pos-1.0.0.jar";
-        String classFile = "target\\classes\\com\\restaurant\\view\\dialogs\\SplitBillDialog.class";
-        String entryName = "com/restaurant/view/dialogs/SplitBillDialog.class";
+        String[] classFiles = {
+            "target\\classes\\com\\restaurant\\view\\dialogs\\SplitBillDialog.class",
+            "target\\classes\\com\\restaurant\\view\\dialogs\\MultiQRDialog.class",
+            "target\\classes\\com\\restaurant\\view\\dialogs\\TransferQRDialog.class",
+            "target\\classes\\com\\restaurant\\util\\QRCodeGenerator.class"
+        };
+        String[] entryNames = {
+            "com/restaurant/view/dialogs/SplitBillDialog.class",
+            "com/restaurant/view/dialogs/MultiQRDialog.class",
+            "com/restaurant/view/dialogs/TransferQRDialog.class",
+            "com/restaurant/util/QRCodeGenerator.class"
+        };
         
         File tempJar = new File(jarFile + ".tmp");
         
@@ -23,11 +33,16 @@ public class UpdateJar {
             byte[] buffer = new byte[8192];
             
             while ((entry = jis.getNextJarEntry()) != null) {
-                // Skip the class we're updating
-                if (entry.getName().equals(entryName)) {
-                    System.out.println("Skipping old: " + entry.getName());
-                    continue;
+                // Skip the classes we're updating
+                boolean skip = false;
+                for (String name : entryNames) {
+                    if (entry.getName().equals(name)) {
+                        System.out.println("Skipping old: " + entry.getName());
+                        skip = true;
+                        break;
+                    }
                 }
+                if (skip) continue;
                 
                 jos.putNextEntry(new JarEntry(entry.getName()));
                 int read;
@@ -37,11 +52,13 @@ public class UpdateJar {
                 jos.closeEntry();
             }
             
-            // Add updated class
-            System.out.println("Adding new: " + entryName);
-            jos.putNextEntry(new JarEntry(entryName));
-            Files.copy(Paths.get(classFile), jos);
-            jos.closeEntry();
+            // Add updated classes
+            for (int i = 0; i < classFiles.length; i++) {
+                System.out.println("Adding new: " + entryNames[i]);
+                jos.putNextEntry(new JarEntry(entryNames[i]));
+                Files.copy(Paths.get(classFiles[i]), jos);
+                jos.closeEntry();
+            }
         }
         
         // Replace original JAR with updated one
