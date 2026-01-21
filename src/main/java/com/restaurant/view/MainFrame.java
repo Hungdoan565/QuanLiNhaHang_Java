@@ -21,6 +21,7 @@ import com.restaurant.view.panels.PromotionPanel;
 import com.restaurant.view.panels.ReservationPanel;
 import com.restaurant.view.panels.SettingsPanel;
 import com.restaurant.view.panels.StaffPanel;
+import com.restaurant.view.panels.WaiterPanel;
 import net.miginfocom.swing.MigLayout;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -85,6 +86,7 @@ public class MainFrame extends JFrame {
     public static final String PANEL_RESERVATIONS = "reservations";
     public static final String PANEL_REPORTS = "reports";
     public static final String PANEL_SETTINGS = "settings";
+    public static final String PANEL_WAITER = "waiter";
     
     public MainFrame(User user) {
         this.currentUser = user;
@@ -93,8 +95,27 @@ public class MainFrame extends JFrame {
         setupKeyBindings();
         startClock();
         
-        // Show dashboard by default
-        navigateTo(PANEL_DASHBOARD, "Tổng quan");
+        // Navigate to appropriate default panel based on role
+        String defaultPanel = PANEL_DASHBOARD;
+        String defaultTitle = "Tổng quan";
+        
+        if (currentUser.getRole() != null) {
+            if (currentUser.getRole().isChef() && !currentUser.getRole().isAdmin()) {
+                // Chef → Kitchen display
+                defaultPanel = PANEL_KITCHEN;
+                defaultTitle = "Màn hình bếp";
+            } else if (currentUser.getRole().isWaiter()) {
+                // Waiter → Waiter pickup panel
+                defaultPanel = PANEL_WAITER;
+                defaultTitle = "Lấy món";
+            } else if (!currentUser.getRole().canAccessDashboard()) {
+                // Any other role without dashboard access → POS
+                defaultPanel = PANEL_POS;
+                defaultTitle = "Bán hàng";
+            }
+        }
+        
+        navigateTo(defaultPanel, defaultTitle);
         
         logger.info("MainFrame initialized for user: {}", user.getUsername());
     }
@@ -173,6 +194,8 @@ public class MainFrame extends JFrame {
         contentPanel.add(new CustomerPanel(currentUser), PANEL_CUSTOMERS);
         contentPanel.add(new PromotionPanel(currentUser), PANEL_PROMOTIONS);
         contentPanel.add(new ReservationPanel(currentUser), PANEL_RESERVATIONS);
+        
+        contentPanel.add(new WaiterPanel(currentUser), PANEL_WAITER);
         
         // Reports panel with error handling
         try {

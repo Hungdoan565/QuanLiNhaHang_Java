@@ -137,13 +137,22 @@ public class Sidebar extends JPanel {
             return;
         }
         
+        // WAITER special case - Pickup panel + My Schedule
+        if (role.isWaiter()) {
+            addMenuItem(MainFrame.PANEL_WAITER, "kitchen", "Lấy món", true);
+            addMenuItem(MainFrame.PANEL_MY_SCHEDULE, "schedule", "Lịch của tôi", true);
+            menuContainer.revalidate();
+            menuContainer.repaint();
+            return;
+        }
+        
         // Dashboard - Admin, Manager, Cashier
         if (role.canAccessDashboard()) {
             addMenuItem(MainFrame.PANEL_DASHBOARD, "dashboard", "Tổng quan", true);
         }
         
-        // POS - Admin, Manager, Cashier, Waiter
-        if (role.canAccessPOS()) {
+        // POS - Admin, Manager, Cashier (NOT Waiter - they use WaiterPanel)
+        if (role.canAccessPOS() && !role.isWaiter()) {
             addMenuItem(MainFrame.PANEL_POS, "pos", "Bán hàng", true);
         }
         

@@ -14,6 +14,7 @@ public class Notification {
         LEAVE_APPROVED("Duyệt nghỉ phép"),
         LEAVE_REJECTED("Từ chối nghỉ phép"),
         SCHEDULE("Lịch làm việc"),
+        ORDER("Đơn hàng"),
         SYSTEM("Hệ thống");
         
         private final String displayName;

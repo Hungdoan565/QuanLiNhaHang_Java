@@ -189,6 +189,33 @@ public class NotificationService {
         createNotification(n);
     }
     
+    /**
+     * Notify all waiters that food is ready for pickup
+     * @param tableName The table name with ready food
+     * @param itemCount Number of ready items
+     */
+    public void notifyWaiters(String tableName, int itemCount) {
+        // Get all active waiters (role_id = 4 for WAITER)
+        String sql = "SELECT id FROM users WHERE role_id = 4 AND is_active = TRUE";
+        
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            
+            while (rs.next()) {
+                int waiterId = rs.getInt("id");
+                Notification n = new Notification(waiterId,
+                    "🍽️ Món sẵn sàng",
+                    tableName + " có " + itemCount + " món cần lấy",
+                    NotificationType.ORDER);
+                createNotification(n);
+            }
+            logger.info("Notified waiters about ready food for table {}", tableName);
+        } catch (SQLException e) {
+            logger.error("Error notifying waiters", e);
+        }
+    }
+    
     private Notification mapNotification(ResultSet rs) throws SQLException {
         Notification n = new Notification();
         n.setId(rs.getInt("id"));

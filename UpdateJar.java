@@ -19,6 +19,8 @@ public class UpdateJar {
             "target\\classes\\com\\restaurant\\model\\Customer.class",
             "target\\classes\\com\\restaurant\\model\\Customer$CustomerTier.class",
             "target\\classes\\com\\restaurant\\model\\Customer$Gender.class",
+            "target\\classes\\com\\restaurant\\model\\Notification.class",
+            "target\\classes\\com\\restaurant\\model\\Notification$NotificationType.class",
             "target\\classes\\com\\restaurant\\model\\Reservation.class",
             "target\\classes\\com\\restaurant\\model\\Reservation$Status.class",
             "target\\classes\\com\\restaurant\\view\\panels\\POSPanel.class",
@@ -38,6 +40,8 @@ public class UpdateJar {
             "com/restaurant/model/Customer.class",
             "com/restaurant/model/Customer$CustomerTier.class",
             "com/restaurant/model/Customer$Gender.class",
+            "com/restaurant/model/Notification.class",
+            "com/restaurant/model/Notification$NotificationType.class",
             "com/restaurant/model/Reservation.class",
             "com/restaurant/model/Reservation$Status.class",
             "com/restaurant/view/panels/POSPanel.class",
@@ -55,7 +59,22 @@ public class UpdateJar {
         
         addPanelClasses("CustomerPanel", classFileList, entryNameList);
         addPanelClasses("PromotionPanel", classFileList, entryNameList);
+        addPanelClasses("WaiterPanel", classFileList, entryNameList);
         addComponentClasses("Sidebar", classFileList, entryNameList);
+        
+        // Add MainFrame
+        classFileList.add("target\\classes\\com\\restaurant\\view\\MainFrame.class");
+        entryNameList.add("com/restaurant/view/MainFrame.class");
+        classFileList.add("target\\classes\\com\\restaurant\\view\\MainFrame$1.class");
+        entryNameList.add("com/restaurant/view/MainFrame$1.class");
+        classFileList.add("target\\classes\\com\\restaurant\\view\\MainFrame$2.class");
+        entryNameList.add("com/restaurant/view/MainFrame$2.class");
+        classFileList.add("target\\classes\\com\\restaurant\\view\\MainFrame$3.class");
+        entryNameList.add("com/restaurant/view/MainFrame$3.class");
+        classFileList.add("target\\classes\\com\\restaurant\\view\\MainFrame$4.class");
+        entryNameList.add("com/restaurant/view/MainFrame$4.class");
+        classFileList.add("target\\classes\\com\\restaurant\\view\\MainFrame$5.class");
+        entryNameList.add("com/restaurant/view/MainFrame$5.class");
         
         File tempJar = new File(jarFile + ".tmp");
         

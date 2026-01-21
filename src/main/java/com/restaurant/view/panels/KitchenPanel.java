@@ -11,6 +11,7 @@ import com.restaurant.util.KitchenOrderManager.KitchenOrder;
 import com.restaurant.util.KitchenOrderManager.OrderItem;
 import com.restaurant.util.KitchenOrderManager.OrderStatus;
 import com.restaurant.util.ToastNotification;
+import com.restaurant.service.NotificationService;
 import com.restaurant.view.dialogs.CookingGameDialog;
 import net.miginfocom.swing.MigLayout;
 import org.apache.logging.log4j.LogManager;
@@ -587,6 +588,10 @@ public class KitchenPanel extends JPanel {
             } else if (order.getStatus() == OrderStatus.READY) {
                 JButton ringBtn = createActionButton("🔔 Gọi PV", COL_READY);
                 ringBtn.addActionListener(e -> {
+                    // Notify all waiters via notification service
+                    int readyCount = (int) order.getItems().stream().filter(OrderItem::isReady).count();
+                    NotificationService.getInstance().notifyWaiters(order.getTableName(), readyCount);
+                    
                     Toolkit.getDefaultToolkit().beep();
                     ToastNotification.info(SwingUtilities.getWindowAncestor(this), 
                         "Đã gọi phục vụ: " + order.getTableName());
