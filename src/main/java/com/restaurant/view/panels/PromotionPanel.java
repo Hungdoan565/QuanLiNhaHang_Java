@@ -120,7 +120,8 @@ public class PromotionPanel extends JPanel {
         promotionTable.getColumnModel().getColumn(4).setPreferredWidth(100);
         promotionTable.getColumnModel().getColumn(5).setPreferredWidth(150);
         promotionTable.getColumnModel().getColumn(6).setPreferredWidth(100);
-        promotionTable.getColumnModel().getColumn(7).setPreferredWidth(160);
+        promotionTable.getColumnModel().getColumn(7).setPreferredWidth(200);
+        promotionTable.getColumnModel().getColumn(7).setMinWidth(180);
         
         JScrollPane scroll = new JScrollPane(promotionTable);
         scroll.setBorder(BorderFactory.createLineBorder(Color.decode(AppConfig.Colors.BORDER)));
@@ -435,7 +436,7 @@ public class PromotionPanel extends JPanel {
         JButton deleteBtn = createActionButton("Xóa", DANGER, "Xóa khuyến mãi");
         
         public ButtonRenderer() {
-            setLayout(new FlowLayout(FlowLayout.CENTER, 6, 6));
+            setLayout(new FlowLayout(FlowLayout.CENTER, 4, 4));
             setOpaque(true);
             add(editBtn);
             add(deleteBtn);

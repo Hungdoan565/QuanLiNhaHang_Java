@@ -127,7 +127,8 @@ public class CustomerPanel extends JPanel {
         customerTable.getColumnModel().getColumn(4).setPreferredWidth(80);
         customerTable.getColumnModel().getColumn(5).setPreferredWidth(120);
         customerTable.getColumnModel().getColumn(6).setPreferredWidth(70);
-        customerTable.getColumnModel().getColumn(7).setPreferredWidth(220);
+        customerTable.getColumnModel().getColumn(7).setPreferredWidth(280);
+        customerTable.getColumnModel().getColumn(7).setMinWidth(260);
         
         JScrollPane scroll = new JScrollPane(customerTable);
         scroll.setBorder(BorderFactory.createLineBorder(Color.decode(AppConfig.Colors.BORDER)));
@@ -405,7 +406,7 @@ public class CustomerPanel extends JPanel {
         JButton deleteBtn = createActionButton("Xóa", DANGER, "Xóa khách hàng");
         
         public ButtonRenderer() {
-            setLayout(new FlowLayout(FlowLayout.CENTER, 6, 6));
+            setLayout(new FlowLayout(FlowLayout.CENTER, 4, 4));
             setOpaque(true);
             add(editBtn);
             add(bonusBtn);
